@@ -119,6 +119,32 @@ final class AppLocalizationTests: XCTestCase {
         }
     }
 
+    func testSmartPauseLocalizationsAreComplete() {
+        let requiredKeys: Set<String> = [
+            "smartPause",
+            "smartPauseMeetingEnabled",
+            "smartPauseExcludedApps",
+            "smartPauseNoExcludedApps",
+            "smartPauseClickToRemove",
+            "smartPauseAddFrontmostFormat",
+            "smartPauseAddRunningApp",
+            "smartPauseNoRunningApps",
+            "smartPauseAddCustomApp",
+            "smartPauseAddAppTitle",
+            "smartPauseAddAppMessage",
+            "smartPauseAddAppPlaceholder",
+            "smartPauseAdd",
+            "smartPauseStatusBar",
+            "smartPauseMenuMeeting",
+            "smartPauseMenuMeetingFormat"
+        ]
+
+        for language in AppLocalization.supportedLanguageCodes {
+            let keys = AppLocalization.localizationKeys(language: language)
+            XCTAssertTrue(requiredKeys.isSubset(of: keys), "\(language) must include all Smart Pause keys")
+        }
+    }
+
     func testFindsCoreResourceBundleInStandardAppResourcesDirectory() throws {
         let appURL = temporaryDirectory()
             .appendingPathComponent("EyeGuard.app", isDirectory: true)

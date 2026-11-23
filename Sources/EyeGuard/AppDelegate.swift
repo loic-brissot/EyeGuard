@@ -31,6 +31,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let until = "temporaryDisableUntil"
     }
 
+    private enum SmartPauseDefaults {
+        static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
+        static let meetingExcludedApps = "smartPauseMeetingExcludedApps"
+    }
+
+    private struct SmartPauseSnapshot {
+        var remainingWorkTime: TimeInterval?
+        var remainingPostponeTime: TimeInterval?
+        var hadDeferredBreak: Bool
+    }
+
     private var statusBarItem: NSStatusItem!
     private var menu: NSMenu!
     private var stateSnapshotTimer: Timer?
@@ -104,6 +115,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var nightRestrictionSettings = NightRestrictionSettings()
     private var nightOverrideState: NightOverrideState?
     private var temporaryDisableState: TemporaryDisableState?
+
+    // Smart Pause settings & runtime state
+    private let meetingAutoPausePolicy = MeetingAutoPausePolicy()
+    private var meetingAutoPauseSettings = MeetingAutoPauseSettings()
+    private lazy var meetingCallMonitor = MeetingCallMonitor()
+    private var smartPauseEvaluation: SmartPauseEvaluation = .activeNone
+    private var smartPauseSnapshot: SmartPauseSnapshot?
+    private var smartPauseMenuItem: NSMenuItem!
     
     // Language settings
     private var currentLanguage: String = ""
@@ -161,6 +180,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isTemporaryDisableActive: Bool {
         temporaryDisablePolicy.isActive(temporaryDisableState, now: Date())
     }
+
+    private var isSmartPaused: Bool {
+        smartPauseEvaluation.isPaused && !currentNightStatus().isLocked && !isTemporaryDisableActive
+    }
     
     // MARK: - Localization
     
@@ -180,6 +203,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBar()
         setupMenu()
         setupSystemNotifications()
+        meetingCallMonitor.onUpdate = { [weak self] snapshot in
+            self?.handleMeetingCallMonitorUpdate(snapshot)
+        }
+        meetingCallMonitor.start()
         schedulingReady = true
         
         // 记录应用启动
@@ -431,6 +458,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             phase = .nightLocked(until: status.schedule.unlockTime)
         } else if let state = temporaryDisableState {
             phase = .temporarilyDisabled(until: state.until)
+        } else if isSmartPaused {
+            phase = .paused
         } else if let start = postponeStartTime {
             phase = .postponed(until: start.addingTimeInterval(postponeDuration))
         } else if let start = breakSessionStartTime {
@@ -563,6 +592,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         schedulingReady = false
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
+        meetingCallMonitor.stop()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays { overlay.hideOverlay() }
         nightLockOverlays.removeAll()
@@ -625,6 +655,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         temporaryDisableState = loadTemporaryDisableState()
         clearExpiredNightOverride()
 
+        if UserDefaults.standard.object(forKey: SmartPauseDefaults.meetingAutoPauseEnabled) != nil {
+            meetingAutoPauseSettings.isEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.meetingAutoPauseEnabled)
+        } else {
+            meetingAutoPauseSettings.isEnabled = true
+        }
+        meetingAutoPauseSettings.excludedApps = UserDefaults.standard.stringArray(forKey: SmartPauseDefaults.meetingExcludedApps) ?? []
+
         // Apply the loaded settings
         if isCustomMode {
             currentWorkDuration = customWorkDuration
@@ -651,6 +688,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(nightRestrictionSettings.windDownStart.minutesAfterMidnight, forKey: "nightWindDownStartMinutes")
         UserDefaults.standard.set(nightRestrictionSettings.lockStart.minutesAfterMidnight, forKey: "nightLockStartMinutes")
         UserDefaults.standard.set(nightRestrictionSettings.unlockTime.minutesAfterMidnight, forKey: "nightUnlockMinutes")
+        UserDefaults.standard.set(meetingAutoPauseSettings.isEnabled, forKey: SmartPauseDefaults.meetingAutoPauseEnabled)
+        UserDefaults.standard.set(meetingAutoPauseSettings.excludedApps, forKey: SmartPauseDefaults.meetingExcludedApps)
 
         // 记录设置变更
         let changes: [String: String] = [
@@ -667,7 +706,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "night_restriction_enabled": "\(nightRestrictionSettings.isEnabled)",
             "night_wind_down_start": nightRestrictionSettings.windDownStart.displayString,
             "night_lock_start": nightRestrictionSettings.lockStart.displayString,
-            "night_unlock_time": nightRestrictionSettings.unlockTime.displayString
+            "night_unlock_time": nightRestrictionSettings.unlockTime.displayString,
+            "smart_pause_meeting_enabled": "\(meetingAutoPauseSettings.isEnabled)",
+            "smart_pause_excluded_count": "\(meetingAutoPauseSettings.excludedApps.count)"
         ]
         eventRecorder.recordSettingsChange(changes: changes)
     }
@@ -714,6 +755,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         setupModeMenu()
         setupNightRestrictionMenu()
+        setupSmartPauseMenu()
         
         menu.addItem(NSMenuItem.separator())
         
@@ -1571,6 +1613,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
+        meetingCallMonitor.stop()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays {
             overlay.hideOverlay()
@@ -1819,6 +1862,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             title = " " + localized("nightLockedStatus")
         } else if isTemporaryDisableActive {
             title = " " + localized("temporaryDisableActiveStatus") + " " + formatStatusBarTime(temporaryDisableRemainingSeconds)
+        } else if isSmartPaused {
+            title = " " + localized("smartPauseStatusBar")
         } else if showCountdownInStatusBar {
             if let start = postponeStartTime {
                 title = " " + formatStatusBarTime(CountdownTiming.secondsRemaining(until: start.addingTimeInterval(postponeDuration), now: now))
@@ -2001,6 +2046,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         dismissPreBreakHUD()
         closeHealthStatsWindowIfNeeded()
         cleanupBreakOverlays()
+        smartPauseSnapshot = nil
 
         countdownScheduler.cancel()
 
@@ -2132,6 +2178,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             timerMenuItem.title = "\(localized("nightLockedStatus")) · \(localized("nightUnlockTime")) \(nightStatus.schedule.unlockClockTime.displayString)"
         } else if isTemporaryDisableActive {
             timerMenuItem.title = "\(localized("temporaryDisableActiveStatus")) · \(formatStatusBarTime(temporaryDisableRemainingSeconds))"
+        } else if isSmartPaused {
+            timerMenuItem.title = smartPauseMenuStatusText()
         } else if isPostponeActive {
             // 推迟期间显示推迟倒计时
             let totalSeconds = Int(postponeTimeRemaining)
@@ -2200,6 +2248,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         countdownScheduler.cancel()
         dismissPreBreakHUD()
+        smartPauseSnapshot = nil
 
         if !breakOverlays.isEmpty {
             cleanupBreakOverlays()
@@ -2311,6 +2360,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         dismissPreBreakHUD()
 
         if applyNightRestrictionState(reason: "before_break_overlay") {
+            rescheduleCountdown()
+            return
+        }
+
+        if isSmartPaused {
+            if smartPauseSnapshot == nil {
+                smartPauseSnapshot = SmartPauseSnapshot(
+                    remainingWorkTime: nil,
+                    remainingPostponeTime: nil,
+                    hadDeferredBreak: true
+                )
+            } else {
+                smartPauseSnapshot?.hadDeferredBreak = true
+            }
+            workSessionStartTime = nil
+            postponeStartTime = nil
+            postponeDuration = 0
+            updateStatusBarTitle()
+            updateMenuTimer()
             rescheduleCountdown()
             return
         }
@@ -2604,6 +2672,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func pauseCurrentSession(reason: String) {
         displaysAreActive = false
+        smartPauseSnapshot = nil
         countdownScheduler.cancel()
         dismissPreBreakHUD()
         logSessionDebug("system_pause_current_session", context: [
@@ -2801,6 +2870,7 @@ extension AppDelegate: NSMenuDelegate {
         updateTemporaryDisableMenuItem()
         updateModeMenuStates()
         rebuildNightRestrictionMenu()
+        rebuildSmartPauseMenu()
         startMenuUpdateTimer()
     }
     
@@ -2869,6 +2939,7 @@ extension AppDelegate: PreBreakHUDDelegate {
         guard displaysAreActive,
               !status.isLocked,
               !isTemporaryDisableActive,
+              !isSmartPaused,
               breakSessionStartTime == nil,
               breakOverlays.isEmpty else {
             dismissPreBreakHUD()
@@ -2968,5 +3039,322 @@ extension AppDelegate: PreBreakHUDDelegate {
         dismissPreBreakHUD()
         logManager.logEvent(.breakSkipped, context: ["reason": "pre_break_skip"])
         restartWorkTimer()
+    }
+}
+
+// MARK: - Smart Pause
+
+extension AppDelegate {
+    private func setupSmartPauseMenu() {
+        smartPauseMenuItem = NSMenuItem(title: localized("smartPause"), action: nil, keyEquivalent: "")
+        smartPauseMenuItem.submenu = buildSmartPauseSubmenu()
+        menu.addItem(smartPauseMenuItem)
+    }
+
+    private func rebuildSmartPauseMenu() {
+        guard smartPauseMenuItem != nil else { return }
+        smartPauseMenuItem.title = localized("smartPause")
+        smartPauseMenuItem.submenu = buildSmartPauseSubmenu()
+    }
+
+    private func buildSmartPauseSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+
+        let meetingEnabledItem = NSMenuItem(
+            title: localized("smartPauseMeetingEnabled"),
+            action: #selector(toggleMeetingAutoPause),
+            keyEquivalent: ""
+        )
+        meetingEnabledItem.target = self
+        meetingEnabledItem.state = meetingAutoPauseSettings.isEnabled ? .on : .off
+        submenu.addItem(meetingEnabledItem)
+
+        submenu.addItem(NSMenuItem.separator())
+
+        let excludedAppsItem = NSMenuItem(
+            title: localized("smartPauseExcludedApps"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        excludedAppsItem.submenu = buildExcludedAppsSubmenu()
+        submenu.addItem(excludedAppsItem)
+
+        return submenu
+    }
+
+    private func buildExcludedAppsSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let excludedSet = MeetingAutoPausePolicy.normalizedExcludedSet(from: meetingAutoPauseSettings.excludedApps)
+
+        if meetingAutoPauseSettings.excludedApps.isEmpty {
+            submenu.addItem(disabledMenuItem(localized("smartPauseNoExcludedApps")))
+        } else {
+            submenu.addItem(disabledMenuItem(localized("smartPauseClickToRemove")))
+            for appIdentifier in meetingAutoPauseSettings.excludedApps {
+                let item = NSMenuItem(
+                    title: appIdentifier,
+                    action: #selector(removeExcludedApp(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = appIdentifier
+                item.state = .on
+                submenu.addItem(item)
+            }
+        }
+
+        submenu.addItem(NSMenuItem.separator())
+
+        let selfBundleID = MeetingAutoPausePolicy.normalizedIdentifier(Bundle.main.bundleIdentifier ?? AppIdentity.bundleIdentifier)
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           frontmost.activationPolicy != .prohibited {
+            let frontBundle = frontmost.bundleIdentifier ?? ""
+            let frontName = frontmost.localizedName ?? frontBundle
+            let frontInfo = RunningAppInfo(bundleIdentifier: frontBundle, localizedName: frontName, isFrontmost: true)
+            let isSelf = MeetingAutoPausePolicy.normalizedIdentifier(frontBundle) == selfBundleID
+            if !isSelf,
+               !frontName.isEmpty,
+               !MeetingAutoPausePolicy.isExcluded(frontInfo, excludedSet: excludedSet) {
+                let identifierToAdd = frontBundle.isEmpty ? frontName : frontBundle
+                let title = String(format: localized("smartPauseAddFrontmostFormat"), frontName)
+                let addFrontmostItem = NSMenuItem(
+                    title: title,
+                    action: #selector(addExcludedApp(_:)),
+                    keyEquivalent: ""
+                )
+                addFrontmostItem.target = self
+                addFrontmostItem.representedObject = identifierToAdd
+                submenu.addItem(addFrontmostItem)
+            }
+        }
+
+        let runningAppsItem = NSMenuItem(
+            title: localized("smartPauseAddRunningApp"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        let runningSubmenu = NSMenu()
+        let candidateApps = MeetingCallMonitor.collectRunningApps()
+            .filter { app in
+                let normalizedBundle = MeetingAutoPausePolicy.normalizedIdentifier(app.bundleIdentifier)
+                return normalizedBundle != selfBundleID &&
+                    !MeetingAutoPausePolicy.isExcluded(app, excludedSet: excludedSet) &&
+                    !app.localizedName.isEmpty
+            }
+            .sorted { $0.localizedName.localizedCaseInsensitiveCompare($1.localizedName) == .orderedAscending }
+
+        if candidateApps.isEmpty {
+            runningSubmenu.addItem(disabledMenuItem(localized("smartPauseNoRunningApps")))
+        } else {
+            for app in candidateApps {
+                let identifierToAdd = app.bundleIdentifier.isEmpty ? app.localizedName : app.bundleIdentifier
+                let title = app.bundleIdentifier.isEmpty ? app.localizedName : "\(app.localizedName) (\(app.bundleIdentifier))"
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(addExcludedApp(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = identifierToAdd
+                runningSubmenu.addItem(item)
+            }
+        }
+        runningAppsItem.submenu = runningSubmenu
+        submenu.addItem(runningAppsItem)
+
+        let addCustomItem = NSMenuItem(
+            title: localized("smartPauseAddCustomApp"),
+            action: #selector(promptAddCustomExcludedApp),
+            keyEquivalent: ""
+        )
+        addCustomItem.target = self
+        submenu.addItem(addCustomItem)
+
+        return submenu
+    }
+
+    @objc private func toggleMeetingAutoPause() {
+        meetingAutoPauseSettings.isEnabled.toggle()
+        saveSettings()
+        rebuildSmartPauseMenu()
+        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+    }
+
+    @objc private func addExcludedApp(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        meetingAutoPauseSettings.excludedApps = MeetingAutoPausePolicy.addingExcludedApp(
+            identifier,
+            to: meetingAutoPauseSettings.excludedApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+    }
+
+    @objc private func removeExcludedApp(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        meetingAutoPauseSettings.excludedApps = MeetingAutoPausePolicy.removingExcludedApp(
+            identifier,
+            from: meetingAutoPauseSettings.excludedApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+    }
+
+    @objc private func promptAddCustomExcludedApp() {
+        let alert = NSAlert()
+        alert.messageText = localized("smartPauseAddAppTitle")
+        alert.informativeText = localized("smartPauseAddAppMessage")
+        alert.addButton(withTitle: localized("smartPauseAdd"))
+        alert.addButton(withTitle: localized("nightOverrideCancel"))
+
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        inputField.placeholderString = localized("smartPauseAddAppPlaceholder")
+        alert.accessoryView = inputField
+        alert.window.initialFirstResponder = inputField
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let value = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+
+        meetingAutoPauseSettings.excludedApps = MeetingAutoPausePolicy.addingExcludedApp(
+            value,
+            to: meetingAutoPauseSettings.excludedApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+    }
+
+    private func smartPauseMenuStatusText() -> String {
+        guard let reason = smartPauseEvaluation.reason else {
+            return localized("smartPauseMenuMeeting")
+        }
+        switch reason {
+        case .meetingOrCall(let appName):
+            if let appName, !appName.isEmpty {
+                return String(format: localized("smartPauseMenuMeetingFormat"), appName)
+            }
+            return localized("smartPauseMenuMeeting")
+        }
+    }
+
+    private func handleMeetingCallMonitorUpdate(_ snapshot: MeetingCallMonitor.Snapshot) {
+        let nextEvaluation = meetingAutoPausePolicy.evaluate(
+            settings: meetingAutoPauseSettings,
+            isAudioInputActive: snapshot.isAudioInputActive,
+            runningApps: snapshot.runningApps
+        )
+        applySmartPauseEvaluation(nextEvaluation)
+    }
+
+    private func applySmartPauseEvaluation(_ nextEvaluation: SmartPauseEvaluation) {
+        let wasPaused = smartPauseEvaluation.isPaused
+        smartPauseEvaluation = nextEvaluation
+
+        if currentNightStatus().isLocked || isTemporaryDisableActive {
+            if !nextEvaluation.isPaused {
+                smartPauseSnapshot = nil
+            }
+            updateStatusBarTitle()
+            updateMenuTimer()
+            return
+        }
+
+        if !wasPaused && nextEvaluation.isPaused {
+            enterSmartPause()
+        } else if wasPaused && !nextEvaluation.isPaused {
+            leaveSmartPause()
+        } else if nextEvaluation.isPaused {
+            updateStatusBarTitle()
+            updateMenuTimer()
+        }
+    }
+
+    private func enterSmartPause() {
+        guard displaysAreActive else { return }
+        dismissPreBreakHUD()
+        countdownScheduler.cancel()
+
+        if let breakStart = breakSessionStartTime {
+            let elapsed = Date().timeIntervalSince(breakStart)
+            logManager.logBreakCompleted(actualDuration: elapsed, expectedDuration: currentBreakDuration)
+            eventRecorder.endBreakSession()
+            cleanupBreakOverlays()
+            breakSessionStartTime = nil
+            smartPauseSnapshot = SmartPauseSnapshot(
+                remainingWorkTime: nil,
+                remainingPostponeTime: nil,
+                hadDeferredBreak: true
+            )
+        } else if postponeStartTime != nil {
+            let remaining = postponeTimeRemaining
+            postponeStartTime = nil
+            postponeDuration = 0
+            smartPauseSnapshot = SmartPauseSnapshot(
+                remainingWorkTime: nil,
+                remainingPostponeTime: remaining > 0 ? remaining : nil,
+                hadDeferredBreak: remaining <= 0
+            )
+        } else if workSessionStartTime != nil {
+            let remaining = workTimeRemaining
+            workSessionStartTime = nil
+            smartPauseSnapshot = SmartPauseSnapshot(
+                remainingWorkTime: remaining > 0 ? remaining : nil,
+                remainingPostponeTime: nil,
+                hadDeferredBreak: remaining <= 0
+            )
+        } else {
+            smartPauseSnapshot = SmartPauseSnapshot(
+                remainingWorkTime: nil,
+                remainingPostponeTime: nil,
+                hadDeferredBreak: false
+            )
+        }
+
+        saveCurrentSessionState()
+        updateStatusBarTitle()
+        updateMenuTimer()
+        rescheduleCountdown()
+    }
+
+    private func leaveSmartPause() {
+        let snapshot = smartPauseSnapshot
+        smartPauseSnapshot = nil
+        guard displaysAreActive else { return }
+
+        if applyNightRestrictionState(reason: "smart_pause_ended") {
+            rescheduleCountdown()
+            return
+        }
+        if isTemporaryDisableActive {
+            rescheduleCountdown()
+            return
+        }
+
+        if snapshot?.hadDeferredBreak == true {
+            showBreakOverlay()
+        } else if let remainingPostpone = snapshot?.remainingPostponeTime, remainingPostpone > 0 {
+            postponeStartTime = Date()
+            postponeDuration = remainingPostpone
+            saveCurrentSessionState()
+            updateStatusBarTitle()
+            updateMenuTimer()
+            rescheduleCountdown()
+        } else if let remainingWork = snapshot?.remainingWorkTime, remainingWork > 0 {
+            let planned = TimeInterval(effectiveWorkDuration)
+            let elapsed = max(0, planned - remainingWork)
+            workSessionStartTime = Date().addingTimeInterval(-elapsed)
+            saveCurrentSessionState()
+            updateStatusBarTitle()
+            updateMenuTimer()
+            rescheduleCountdown()
+        } else {
+            startWorkTimer()
+        }
     }
 }
