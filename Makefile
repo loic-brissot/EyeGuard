@@ -1,7 +1,7 @@
 # Keep the established flat SwiftPM resource layout used by the app packager.
 SWIFT_BUILD_FLAGS ?= --build-system native --disable-sandbox --cache-path .build/cache --config-path .build/config --scratch-path .build
-APP_NAME := TwentyGuard
-EXECUTABLE := TwentyGuard
+APP_NAME := EyeGuard
+EXECUTABLE := EyeGuard
 BUILD_APP := build/$(APP_NAME).app
 INSTALL_APP := /Applications/$(APP_NAME).app
 VERSION := $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist 2>/dev/null || echo 0.0.0)
@@ -9,8 +9,8 @@ DMG := dist/$(APP_NAME)-v$(VERSION).dmg
 APPLE_ID ?=
 TEAM_ID ?=
 DEVELOPER_ID_APPLICATION ?=
-NOTARY_PROFILE ?= TwentyGuardNotary
-LOCALIZATION_BENCHMARK_BUNDLE ?= $(BUILD_APP)/Contents/Resources/TwentyGuard_TwentyGuardCore.bundle
+NOTARY_PROFILE ?= EyeGuardNotary
+LOCALIZATION_BENCHMARK_BUNDLE ?= $(BUILD_APP)/Contents/Resources/EyeGuard_EyeGuardCore.bundle
 LOCALIZATION_BENCHMARK_ITERATIONS ?= 30
 
 build:
@@ -27,7 +27,7 @@ test-lifecycle:
 
 benchmark-localization:
 	@mkdir -p build
-	swiftc -O Sources/TwentyGuardCore/AppLocalization.swift scripts/LocalizationBenchmark/main.swift -o build/localization-benchmark
+	swiftc -O Sources/EyeGuardCore/AppLocalization.swift scripts/LocalizationBenchmark/main.swift -o build/localization-benchmark
 	build/localization-benchmark "$(LOCALIZATION_BENCHMARK_BUNDLE)" $(LOCALIZATION_BENCHMARK_ITERATIONS)
 
 clean:
@@ -44,14 +44,14 @@ build-app: clean
 	@cp ./.build/release/$(EXECUTABLE) "$(BUILD_APP)/Contents/MacOS/"
 	@cp Info.plist "$(BUILD_APP)/Contents/"
 	@printf 'APPL????' > "$(BUILD_APP)/Contents/PkgInfo"
-	@cp Sources/TwentyGuard/Resources/version-history.json "$(BUILD_APP)/Contents/Resources/"
-	@cp Sources/TwentyGuard/Resources/statusbar_icon.png "$(BUILD_APP)/Contents/Resources/"
-	@cp Sources/TwentyGuard/Resources/statusbar_icon@2x.png "$(BUILD_APP)/Contents/Resources/"
+	@cp Sources/EyeGuard/Resources/version-history.json "$(BUILD_APP)/Contents/Resources/"
+	@cp Sources/EyeGuard/Resources/statusbar_icon.png "$(BUILD_APP)/Contents/Resources/"
+	@cp Sources/EyeGuard/Resources/statusbar_icon@2x.png "$(BUILD_APP)/Contents/Resources/"
 	@if ls ./.build/release/*.bundle >/dev/null 2>&1; then \
 		cp -R ./.build/release/*.bundle "$(BUILD_APP)/Contents/Resources/"; \
 	fi
 	@echo "🎨 Copying app icon..."
-	@cp Sources/TwentyGuard/Resources/AppIcon.icns "$(BUILD_APP)/Contents/Resources/AppIcon.icns"
+	@cp Sources/EyeGuard/Resources/AppIcon.icns "$(BUILD_APP)/Contents/Resources/AppIcon.icns"
 	@echo "🔏 Signing app bundle..."
 	@codesign --force --deep --sign - "$(BUILD_APP)"
 	@./scripts/verify-app-bundle.sh "$(BUILD_APP)"
@@ -148,7 +148,7 @@ install: build-app
 	@pkill -f "$(INSTALL_APP)" || true
 	@sleep 1
 	@if [ -d "$(INSTALL_APP)" ]; then \
-		echo "🗑️  Removing old TwentyGuard version..."; \
+		echo "🗑️  Removing old EyeGuard version..."; \
 		rm -rf "$(INSTALL_APP)"; \
 	fi
 	@echo "📋 Copying new version to Applications..."

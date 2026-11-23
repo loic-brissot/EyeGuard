@@ -1,7 +1,7 @@
 ---
 id: TASK-1
 title: Rebrand Swift package, bundle metadata, and build scripts to EyeGuard
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
 labels:
@@ -22,7 +22,7 @@ Rename Package.swift targets, executable, Info.plist bundle ID/name, Makefile, v
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Package.swift defines EyeGuardCore and EyeGuard targets
-- [ ] #2 Info.plist uses EyeGuard bundle name and bundle identifier
-- [ ] #3 make test, make test-lifecycle, and make dmg pass with EyeGuard.app and EyeGuard-v*.dmg
+- [x] #1 Package.swift defines EyeGuardCore and EyeGuard targets
+- [x] #2 Info.plist uses EyeGuard bundle name and bundle identifier
+- [x] #3 make test, make test-lifecycle, and make dmg pass with EyeGuard.app and EyeGuard-v*.dmg
 <!-- AC:END -->

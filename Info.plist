@@ -5,13 +5,13 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleExecutable</key>
-    <string>TwentyGuard</string>
+    <string>EyeGuard</string>
     <key>CFBundleIdentifier</key>
-    <string>com.javengroup.twentyguard</string>
+    <string>com.eyeguard.app</string>
     <key>CFBundleName</key>
-    <string>TwentyGuard</string>
+    <string>EyeGuard</string>
     <key>CFBundleDisplayName</key>
-    <string>TwentyGuard</string>
+    <string>EyeGuard</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
