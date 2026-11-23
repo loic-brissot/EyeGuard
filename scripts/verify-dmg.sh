@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-DMG_PATH="${1:-dist/TwentyGuard-v$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist 2>/dev/null || echo 0.0.0).dmg}"
-APP_NAME="TwentyGuard"
-MOUNT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/twentyguard-dmg-verify.XXXXXX")"
+DMG_PATH="${1:-dist/EyeGuard-v$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist 2>/dev/null || echo 0.0.0).dmg}"
+APP_NAME="EyeGuard"
+MOUNT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/eyeguard-dmg-verify.XXXXXX")"
 
 cleanup() {
     hdiutil detach "$MOUNT_DIR" >/dev/null 2>&1 || true

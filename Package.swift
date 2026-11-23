@@ -2,43 +2,43 @@
 import PackageDescription
 
 let package = Package(
-    name: "TwentyGuard",
+    name: "EyeGuard",
     defaultLocalization: "en",
     platforms: [
         .macOS(.v12)
     ],
     products: [
         .library(
-            name: "TwentyGuardCore",
-            targets: ["TwentyGuardCore"]
+            name: "EyeGuardCore",
+            targets: ["EyeGuardCore"]
         ),
         .executable(
-            name: "TwentyGuard",
-            targets: ["TwentyGuard"]
+            name: "EyeGuard",
+            targets: ["EyeGuard"]
         ),
     ],
     targets: [
         .target(
-            name: "TwentyGuardCore",
+            name: "EyeGuardCore",
             dependencies: [],
             resources: [
                 .process("Resources")
             ]
         ),
         .executableTarget(
-            name: "TwentyGuard",
-            dependencies: ["TwentyGuardCore"],
+            name: "EyeGuard",
+            dependencies: ["EyeGuardCore"],
             resources: [
                 .copy("Resources")
             ]
         ),
         .testTarget(
-            name: "TwentyGuardCoreTests",
-            dependencies: ["TwentyGuardCore"]
+            name: "EyeGuardCoreTests",
+            dependencies: ["EyeGuardCore"]
         ),
         .testTarget(
-            name: "TwentyGuardAppTests",
-            dependencies: ["TwentyGuard"]
+            name: "EyeGuardAppTests",
+            dependencies: ["EyeGuard"]
         ),
     ]
 )

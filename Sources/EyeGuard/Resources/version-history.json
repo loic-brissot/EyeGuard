@@ -1,0 +1,285 @@
+{
+  "_instructions": "⚠️ IMPORTANT: Update this file before every release! See CLAUDE.md section '📦 版本发布检查清单' for instructions.",
+  "app_name": "EyeGuard",
+  "bundle_id": "com.eyeguard.app",
+  "author": {
+    "name": "Javen Fang",
+    "email": "javen.out@gmail.com",
+    "github": "JavenGroup/TwentyGuard"
+  },
+  "current_version": "1.7.10",
+  "versions": [
+    {
+      "version": "1.7.10",
+      "date": "2026-10-24",
+      "changes": [
+        "Show ordinary work countdowns in minutes, returning to seconds for the final minute, while keeping open menus and break overlays updated every second",
+        "Schedule work, break, postpone and night boundaries independently from display refreshes, including clock/time-zone changes and restored sessions",
+        "Cache the status icon and avoid refreshing closed menus; keep ten-second session snapshots and existing preferences"
+      ]
+    },
+    {
+      "version": "1.7.9",
+      "date": "2026-10-23",
+      "changes": [
+        "Reduced countdown CPU usage by caching the app localization resource location and language tables instead of repeatedly scanning build directories and rereading translations",
+        "Kept runtime language switching and missing-key fallback intact, with thread-safe caching and independent explicit resource lookups"
+      ]
+    },
+    {
+      "version": "1.7.8",
+      "date": "2026-05-24",
+      "changes": [
+        "Closed active work sessions immediately when screen lock, screensaver, or display sleep pauses the app so sleep time is not counted as continuous work",
+        "Preserved the paused-by-system-event flag in saved session snapshots until wake starts a fresh work session",
+        "Excluded sessions longer than planned work duration plus postpone time and grace from statistics so impossible long sessions do not pollute health reports"
+      ]
+    },
+    {
+      "version": "1.7.7",
+      "date": "2026-05-24",
+      "changes": [
+        "Fixed completed breaks always starting a fresh work session even when stale postpone state is still present",
+        "Added a SessionState regression test so completed breaks clear postpone state and reset the work start time",
+        "Added session_debug evidence when a completed break starts a fresh work session and clears stale postpone state"
+      ]
+    },
+    {
+      "version": "1.7.6",
+      "date": "2026-05-24",
+      "changes": [
+        "Added structured session_debug JSONL events for session restoration, system pause/resume, work-session reuse, break attachment, and break completion",
+        "Allowed StatsDatabase to inject a debug logger so tests can verify diagnostic events without writing user logs",
+        "Reset local TwentyGuard runtime data before reinstalling so new statistics start from a clean baseline"
+      ]
+    },
+    {
+      "version": "1.7.5",
+      "date": "2026-05-24",
+      "changes": [
+        "Reused active work sessions during session restoration so duplicate recovered rows do not create impossible long work periods",
+        "Ignored duplicate restored work-session rows with the same start time when calculating break completion statistics",
+        "Added SQLite and StatsEngine regression tests for duplicate recovered session handling"
+      ]
+    },
+    {
+      "version": "1.7.4",
+      "date": "2026-05-24",
+      "changes": [
+        "Added Command-W support to close the statistics dashboard window",
+        "Added Command-C as the key equivalent for the statistics dashboard Close button",
+        "Added AppKit shortcut regression tests for the statistics dashboard"
+      ]
+    },
+    {
+      "version": "1.7.3",
+      "date": "2026-05-24",
+      "changes": [
+        "Closed postpone records when postponed breaks resume and completed the same break opportunity after the owed break finishes",
+        "Interrupted open break and postpone records when a new work session starts so stale active records do not pollute data quality",
+        "Stopped showing harmless sub-minute startup fragments in the data quality panel",
+        "Added affected session IDs to data quality diagnostics so abnormal records can be located directly"
+      ]
+    },
+    {
+      "version": "1.7.2",
+      "date": "2026-05-23",
+      "changes": [
+        "Fixed postpone statistics staying at zero after breaks were postponed from the break overlay",
+        "Attached postpone records to the active break's work session instead of requiring an active work session",
+        "Added an app-level SQLite regression test for postpone persistence during active breaks"
+      ]
+    },
+    {
+      "version": "1.7.1",
+      "date": "2026-05-23",
+      "changes": [
+        "Moved monthly statistics into a separate top-level tab instead of appending them to the default summary page",
+        "Kept month navigation and day selection scoped to the month tab so the summary page is not rebuilt during month browsing",
+        "Added Core presentation tests and localization coverage for the statistics tabs"
+      ]
+    },
+    {
+      "version": "1.7.0",
+      "date": "2026-05-23",
+      "changes": [
+        "Redesigned the statistics dashboard around protection adherence instead of raw activity tracking",
+        "Added long-lived SQLite stats events for app exits, temporary disable, and night override activity",
+        "Added monthly statistics with month switching, calendar-style daily states, and selected-day details",
+        "Expanded the seven-day view with compact exception markers",
+        "Added Core aggregation tests and localization coverage for protection statistics"
+      ]
+    },
+    {
+      "version": "1.6.0",
+      "date": "2026-05-23",
+      "changes": [
+        "Added a one-hour temporary disable mode for meetings and other special situations",
+        "Paused active work, break, and postpone timers while temporary disable is active, then resumed normal protection with a fresh work cycle",
+        "Kept Night Screen Lock authoritative: temporary disable cannot start during night lock or night override, and night lock interrupts an active temporary disable",
+        "Persisted temporary disable state across app restarts and added menu/status countdowns",
+        "Added Core policy tests and localization coverage for temporary disable"
+      ]
+    },
+    {
+      "version": "1.5.5",
+      "date": "2026-05-08",
+      "changes": [
+        "Fixed postponed breaks restoring as a fresh work cycle after app restart",
+        "Persisted postpone start time, postpone duration, and cumulative postponed time in session state",
+        "Restored active postpone countdowns after restart, or immediately resumed the owed break when the postpone already elapsed",
+        "Clarified the menu bar title during postponed breaks",
+        "Added regression tests for postponed-break session recovery"
+      ]
+    },
+    {
+      "version": "1.5.4",
+      "date": "2026-05-08",
+      "changes": [
+        "Replaced the Night Screen Lock testing escape with a formal Night Override flow",
+        "Added escalating override costs with wait time, reason selection, exact typed confirmation, and a 30-minute unlock window",
+        "Persisted active night overrides across restarts and logged requested, granted, cancelled, and expired override events",
+        "Added night override counts to the health statistics night metric",
+        "Updated all supported localizations and added regression tests for the override policy and localization keys"
+      ]
+    },
+    {
+      "version": "1.5.3",
+      "date": "2026-05-07",
+      "changes": [
+        "Fixed the distributed app launch crash caused by SwiftPM resource bundle lookup",
+        "Added standard macOS app bundle metadata to Info.plist",
+        "Added automated app bundle and DMG layout validation for executable, metadata, icons, resource bundles, localization files, and the Applications symlink",
+        "Added regression tests for packaged localization resource lookup",
+        "Published a Developer ID signed and Apple-notarized v1.5.3 DMG for direct download"
+      ]
+    },
+    {
+      "version": "1.5.2",
+      "date": "2026-05-07",
+      "changes": [
+        "Moved app localization to standard SwiftPM .lproj Localizable.strings resources",
+        "Completed Spanish, Japanese, and Korean translations for night screen lock and statistics UI",
+        "Added localization tests that enforce complete language keys and matching format specifiers",
+        "Published a Developer ID signed and Apple-notarized v1.5.2 DMG for direct download"
+      ]
+    },
+    {
+      "version": "1.5.1",
+      "date": "2026-05-07",
+      "changes": [
+        "Refreshed the app icon and status bar icon resources",
+        "Added launch marketing copy, channel drafts, asset shot lists, and readiness notes"
+      ]
+    },
+    {
+      "version": "1.5.0",
+      "date": "2026-05-05",
+      "changes": [
+        "Renamed internal SwiftPM package targets and executable to TwentyGuard",
+        "Reset local statistics and session storage to the TwentyGuard application support path",
+        "Removed legacy 20-20-20 settings and data migration paths",
+        "Renamed the statistics database to twentyguard_stats.db",
+        "Published a Developer ID signed and Apple-notarized DMG for direct download"
+      ]
+    },
+    {
+      "version": "1.4.0",
+      "date": "2026-05-03",
+      "changes": [
+        "Renamed the public app brand and bundle to TwentyGuard",
+        "Updated build, install, and DMG packaging paths for TwentyGuard.app",
+        "Added migration for existing 20-20-20 user settings",
+        "Added a marketing workspace for launch planning"
+      ]
+    },
+    {
+      "version": "1.3.2",
+      "date": "2026-05-03",
+      "changes": [
+        "Moved Night Screen Lock next to the mode controls in the main menu",
+        "Shortened the Tonight rhythm row and moved detailed stages into a submenu"
+      ]
+    },
+    {
+      "version": "1.3.1",
+      "date": "2026-05-03",
+      "changes": [
+        "Refined the night screen lock menu with a compact rhythm summary and testing escape submenu",
+        "Replaced the night lock dialog card with a full-screen status overlay",
+        "Reworked the eye health report around a verdict-first dashboard",
+        "Aligned the seven-day table with date, work, completion, and postpone columns"
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2026-05-03",
+      "changes": [
+        "Added optional night screen lock with evening wind-down stages",
+        "Added configurable wind-down, full-lock, and morning unlock times",
+        "Added full-screen night lock overlay with countdown and testing escape",
+        "Reduced work-cycle duration automatically during night wind-down"
+      ]
+    },
+    {
+      "version": "1.2.3",
+      "date": "2026-04-27",
+      "changes": [
+        "Added 15, 25, 35, and 45 minute custom screen usage duration options"
+      ]
+    },
+    {
+      "version": "1.2.2",
+      "date": "2026-04-27",
+      "changes": [
+        "Removed the manual refresh button from the eye health report",
+        "Refresh statistics automatically whenever the report is opened",
+        "Close the health report when a break starts so it does not reappear after the break",
+        "Aligned the seven-day daily rows with fixed-width columns"
+      ]
+    },
+    {
+      "version": "1.2.1",
+      "date": "2026-04-26",
+      "changes": [
+        "Rebuilt the eye health report with a scrollable dashboard layout",
+        "Added a tested statistics engine for daily and seven-day health metrics",
+        "Excluded short restart fragments and stale long sessions from health totals",
+        "Separated break completion rate, postponed sessions, and total postpone actions",
+        "Added data quality warnings for incomplete break and postpone records"
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-04-26",
+      "changes": [
+        "Changed the default cumulative postpone limit to 5 minutes",
+        "Added a custom-mode postpone limit selector with 5-minute and 10-minute options",
+        "Improved statistics queries for the current JSON-backed session model",
+        "Fixed build metadata and SwiftPM resource configuration"
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2025-01-15",
+      "changes": [
+        "Smart system wake behavior: automatically start fresh work session after sleep/screensaver",
+        "Postpone mechanism with 10-minute cumulative limit to prevent abuse",
+        "Enhanced health statistics with comprehensive event tracking",
+        "Improved session recovery after system events"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2025-01-10",
+      "changes": [
+        "Initial release with 20-20-20 rule implementation",
+        "Menu bar application with full-screen break overlay",
+        "Multi-monitor support",
+        "5 languages: English, 简体中文, Español, 日本語, 한국어",
+        "Custom work/break duration settings",
+        "Eye health statistics tracking"
+      ]
+    }
+  ]
+}

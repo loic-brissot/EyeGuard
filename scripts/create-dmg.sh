@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-# TwentyGuard DMG Creation Script
+# EyeGuard DMG Creation Script
 # Creates a DMG container. The Makefile release target handles Developer ID
 # signing, notarization, and stapling for public distribution.
 
 set -euo pipefail
 
-APP_NAME="TwentyGuard"
+APP_NAME="EyeGuard"
 APP_PATH="./build/${APP_NAME}.app"
-DMG_NAME="TwentyGuard"
+DMG_NAME="EyeGuard"
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist 2>/dev/null || echo "1.5.0")
 DMG_WINDOW_X=200
 DMG_WINDOW_Y=120
@@ -19,7 +19,7 @@ DMG_TEXT_SIZE=16
 
 TEMP_DMG="temp_${DMG_NAME}.dmg"
 FINAL_DMG="dist/${DMG_NAME}-v${VERSION}.dmg"
-STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/twentyguard-dmg-staging.XXXXXX")"
+STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/eyeguard-dmg-staging.XXXXXX")"
 DEVICE=""
 VOLUME=""
 

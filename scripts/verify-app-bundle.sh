@@ -2,11 +2,11 @@
 
 set -euo pipefail
 
-APP_PATH="${1:-build/TwentyGuard.app}"
-APP_NAME="TwentyGuard"
-BUNDLE_ID="com.javengroup.twentyguard"
-CORE_RESOURCE_BUNDLE="TwentyGuard_TwentyGuardCore.bundle"
-APP_RESOURCE_BUNDLE="TwentyGuard_TwentyGuard.bundle"
+APP_PATH="${1:-build/EyeGuard.app}"
+APP_NAME="EyeGuard"
+BUNDLE_ID="com.eyeguard.app"
+CORE_RESOURCE_BUNDLE="EyeGuard_EyeGuardCore.bundle"
+APP_RESOURCE_BUNDLE="EyeGuard_EyeGuard.bundle"
 INFO_PLIST="${APP_PATH}/Contents/Info.plist"
 
 fail() {
