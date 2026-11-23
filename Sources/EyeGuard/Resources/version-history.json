@@ -7,8 +7,17 @@
     "email": "javen.out@gmail.com",
     "github": "JavenGroup/TwentyGuard"
   },
-  "current_version": "1.7.10",
+  "current_version": "0.0.0",
   "versions": [
+    {
+      "version": "0.0.0",
+      "date": "2026-11-23",
+      "changes": [
+        "Rebranded Swift package, bundle metadata, and build scripts from TwentyGuard to EyeGuard",
+        "Added optional Skip button and configurable strictness (Gentle, Balanced, Strict) to the break overlay",
+        "Added non-intrusive pre-break heads-up countdown HUD with quick Snooze and Skip actions"
+      ]
+    },
     {
       "version": "1.7.10",
       "date": "2026-10-24",
