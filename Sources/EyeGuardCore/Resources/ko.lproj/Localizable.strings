@@ -190,3 +190,7 @@
 "smartPauseMenuFullscreenFormat" = "일시 정지됨: 전체 화면 앱 (%@)";
 "smartPauseMenuDeepFocus" = "일시 정지됨: 집중 모드";
 "smartPauseMenuDeepFocusFormat" = "일시 정지됨: 집중 모드 (%@)";
+"smartPauseScreenCaptureEnabled" = "화면 기록 및 공유 중 일시 정지";
+"smartPauseScreenCaptureLimitedPermission" = "화면 기록 권한이 없어 감지가 제한됩니다";
+"smartPauseMenuScreenCapture" = "일시 정지됨: 화면 공유 / 기록 중";
+"smartPauseMenuScreenCaptureFormat" = "일시 정지됨: 화면 공유 / 기록 중 (%@)";

@@ -32,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private enum SmartPauseDefaults {
+        static let screenCaptureEnabled = "smartPauseScreenCaptureEnabled"
         static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
         static let meetingExcludedApps = "smartPauseMeetingExcludedApps"
         static let fullscreenPauseEnabled = "smartPauseFullscreenEnabled"
@@ -122,8 +123,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Smart Pause settings & runtime state
     private let smartPausePolicy = SmartPausePolicy()
+    private var screenCaptureSettings = ScreenCaptureSettings()
     private var meetingAutoPauseSettings = MeetingAutoPauseSettings()
     private var focusAppPauseSettings = FocusAppPauseSettings()
+    private lazy var screenCaptureMonitor = ScreenCaptureMonitor()
     private lazy var meetingCallMonitor = MeetingCallMonitor()
     private lazy var focusAppMonitor = FocusAppMonitor()
     private var smartPauseEvaluation: SmartPauseEvaluation = .activeNone
@@ -219,12 +222,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBar()
         setupMenu()
         setupSystemNotifications()
+        screenCaptureMonitor.onUpdate = { [weak self] _ in
+            self?.evaluateSmartPause()
+        }
         meetingCallMonitor.onUpdate = { [weak self] _ in
             self?.evaluateSmartPause()
         }
         focusAppMonitor.onUpdate = { [weak self] _ in
             self?.evaluateSmartPause()
         }
+        screenCaptureMonitor.start()
         meetingCallMonitor.start()
         focusAppMonitor.start()
         schedulingReady = true
@@ -612,6 +619,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         schedulingReady = false
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
+        screenCaptureMonitor.stop()
         meetingCallMonitor.stop()
         focusAppMonitor.stop()
         cancelInputDeferral()
@@ -677,6 +685,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         temporaryDisableState = loadTemporaryDisableState()
         clearExpiredNightOverride()
 
+        if UserDefaults.standard.object(forKey: SmartPauseDefaults.screenCaptureEnabled) != nil {
+            screenCaptureSettings.isEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.screenCaptureEnabled)
+        } else {
+            screenCaptureSettings.isEnabled = true
+        }
+
         if UserDefaults.standard.object(forKey: SmartPauseDefaults.meetingAutoPauseEnabled) != nil {
             meetingAutoPauseSettings.isEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.meetingAutoPauseEnabled)
         } else {
@@ -738,6 +752,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(nightRestrictionSettings.windDownStart.minutesAfterMidnight, forKey: "nightWindDownStartMinutes")
         UserDefaults.standard.set(nightRestrictionSettings.lockStart.minutesAfterMidnight, forKey: "nightLockStartMinutes")
         UserDefaults.standard.set(nightRestrictionSettings.unlockTime.minutesAfterMidnight, forKey: "nightUnlockMinutes")
+        UserDefaults.standard.set(screenCaptureSettings.isEnabled, forKey: SmartPauseDefaults.screenCaptureEnabled)
         UserDefaults.standard.set(meetingAutoPauseSettings.isEnabled, forKey: SmartPauseDefaults.meetingAutoPauseEnabled)
         UserDefaults.standard.set(meetingAutoPauseSettings.excludedApps, forKey: SmartPauseDefaults.meetingExcludedApps)
         UserDefaults.standard.set(focusAppPauseSettings.fullscreenPauseEnabled, forKey: SmartPauseDefaults.fullscreenPauseEnabled)
@@ -763,6 +778,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "night_wind_down_start": nightRestrictionSettings.windDownStart.displayString,
             "night_lock_start": nightRestrictionSettings.lockStart.displayString,
             "night_unlock_time": nightRestrictionSettings.unlockTime.displayString,
+            "smart_pause_screen_capture_enabled": "\(screenCaptureSettings.isEnabled)",
             "smart_pause_meeting_enabled": "\(meetingAutoPauseSettings.isEnabled)",
             "smart_pause_excluded_count": "\(meetingAutoPauseSettings.excludedApps.count)",
             "smart_pause_fullscreen_enabled": "\(focusAppPauseSettings.fullscreenPauseEnabled)",
@@ -1674,6 +1690,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
+        screenCaptureMonitor.stop()
         meetingCallMonitor.stop()
         focusAppMonitor.stop()
         dismissPreBreakHUD()
@@ -3142,6 +3159,19 @@ extension AppDelegate {
     private func buildSmartPauseSubmenu() -> NSMenu {
         let submenu = NSMenu()
 
+        let screenCaptureEnabledItem = NSMenuItem(
+            title: localized("smartPauseScreenCaptureEnabled"),
+            action: #selector(toggleScreenCapturePause),
+            keyEquivalent: ""
+        )
+        screenCaptureEnabledItem.target = self
+        screenCaptureEnabledItem.state = screenCaptureSettings.isEnabled ? .on : .off
+        submenu.addItem(screenCaptureEnabledItem)
+
+        if screenCaptureSettings.isEnabled && screenCaptureMonitor.lastSnapshot.permissionState == .denied {
+            submenu.addItem(disabledMenuItem(localized("smartPauseScreenCaptureLimitedPermission")))
+        }
+
         let meetingEnabledItem = NSMenuItem(
             title: localized("smartPauseMeetingEnabled"),
             action: #selector(toggleMeetingAutoPause),
@@ -3442,6 +3472,13 @@ extension AppDelegate {
         return submenu
     }
 
+    @objc private func toggleScreenCapturePause() {
+        screenCaptureSettings.isEnabled.toggle()
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
     @objc private func toggleMeetingAutoPause() {
         meetingAutoPauseSettings.isEnabled.toggle()
         saveSettings()
@@ -3622,6 +3659,11 @@ extension AppDelegate {
             return localized("smartPauseMenuMeeting")
         }
         switch reason {
+        case .screenRecordingOrSharing(let source):
+            if let source, !source.isEmpty {
+                return String(format: localized("smartPauseMenuScreenCaptureFormat"), source)
+            }
+            return localized("smartPauseMenuScreenCapture")
         case .meetingOrCall(let appName):
             if let appName, !appName.isEmpty {
                 return String(format: localized("smartPauseMenuMeetingFormat"), appName)
@@ -3710,10 +3752,13 @@ extension AppDelegate {
     }
 
     private func evaluateSmartPause(refreshSnapshots: Bool = false) {
+        let screenCaptureSnapshot = refreshSnapshots ? screenCaptureMonitor.currentSnapshot() : screenCaptureMonitor.lastSnapshot
         let meetingSnapshot = refreshSnapshots ? meetingCallMonitor.currentSnapshot() : meetingCallMonitor.lastSnapshot
         let focusSnapshot = refreshSnapshots ? focusAppMonitor.currentSnapshot() : focusAppMonitor.lastSnapshot
         let runningApps = focusSnapshot.runningApps.isEmpty ? meetingSnapshot.runningApps : focusSnapshot.runningApps
         let nextEvaluation = smartPausePolicy.evaluate(
+            screenCaptureSettings: screenCaptureSettings,
+            screenCaptureSnapshot: screenCaptureSnapshot,
             meetingSettings: meetingAutoPauseSettings,
             focusAppSettings: focusAppPauseSettings,
             isAudioInputActive: meetingSnapshot.isAudioInputActive,

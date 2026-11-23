@@ -190,3 +190,7 @@
 "smartPauseMenuFullscreenFormat" = "一時停止中: フルスクリーンアプリ (%@)";
 "smartPauseMenuDeepFocus" = "一時停止中: ディープフォーカス";
 "smartPauseMenuDeepFocusFormat" = "一時停止中: ディープフォーカス (%@)";
+"smartPauseScreenCaptureEnabled" = "画面収録・共有中は一時停止";
+"smartPauseScreenCaptureLimitedPermission" = "画面収録の権限がないため検出が制限されています";
+"smartPauseMenuScreenCapture" = "一時停止中: 画面共有・収録中";
+"smartPauseMenuScreenCaptureFormat" = "一時停止中: 画面共有・収録中 (%@)";

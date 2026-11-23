@@ -1,7 +1,7 @@
 ---
 id: TASK-7
 title: Screen recording / sharing detection
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
 updated_date: '2026-11-23T16:31:00Z'
@@ -22,7 +22,7 @@ Automatically pause breaks when screen sharing or screen recording is active so 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Detects active screen sharing/recording sessions on macOS and defers due breaks
-- [ ] #2 Displays pause status in the menu bar and resumes once capture stops
-- [ ] #3 Gracefully degrades if required macOS permissions are not granted
+- [x] #1 Detects active screen sharing/recording sessions on macOS and defers due breaks
+- [x] #2 Displays pause status in the menu bar and resumes once capture stops
+- [x] #3 Gracefully degrades if required macOS permissions are not granted
 <!-- AC:END -->

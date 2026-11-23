@@ -190,3 +190,7 @@
 "smartPauseMenuFullscreenFormat" = "En pausa: App a pantalla completa (%@)";
 "smartPauseMenuDeepFocus" = "En pausa: Enfoque profundo";
 "smartPauseMenuDeepFocusFormat" = "En pausa: Enfoque profundo (%@)";
+"smartPauseScreenCaptureEnabled" = "Pausar al grabar o compartir pantalla";
+"smartPauseScreenCaptureLimitedPermission" = "Limitado sin permiso de grabación de pantalla";
+"smartPauseMenuScreenCapture" = "En pausa: Grabando o compartiendo pantalla";
+"smartPauseMenuScreenCaptureFormat" = "En pausa: Grabando o compartiendo pantalla (%@)";

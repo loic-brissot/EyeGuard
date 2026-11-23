@@ -190,3 +190,7 @@
 "smartPauseMenuFullscreenFormat" = "已暂停：全屏应用 (%@)";
 "smartPauseMenuDeepFocus" = "已暂停：深度专注";
 "smartPauseMenuDeepFocusFormat" = "已暂停：深度专注 (%@)";
+"smartPauseScreenCaptureEnabled" = "屏幕录制或共享时暂停";
+"smartPauseScreenCaptureLimitedPermission" = "未授予屏幕录制权限，检测能力受限";
+"smartPauseMenuScreenCapture" = "已暂停：正在屏幕共享/录制";
+"smartPauseMenuScreenCaptureFormat" = "已暂停：正在屏幕共享/录制 (%@)";
