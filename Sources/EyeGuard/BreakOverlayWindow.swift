@@ -1,7 +1,9 @@
 import Cocoa
+import EyeGuardCore
 
 protocol BreakOverlayDelegate: AnyObject {
     func didRequestPostpone(minutes: Int)
+    func didRequestSkipBreak()
 }
 
 class BreakOverlayWindow: NSWindow {
@@ -14,8 +16,10 @@ class BreakOverlayWindow: NSWindow {
     private var postpone1Button: NSButton!
     private var postpone2Button: NSButton!
     private var postpone5Button: NSButton!
+    private var skipButton: NSButton!
     private var postponeStatusLabel: NSTextField!  // 底部状态提示标签
     private var nightWindDownHint: String?
+    private var currentSkipState: BreakSkipState = .hidden
 
     // Localization closure
     private var localizer: ((String) -> String)?
@@ -190,6 +194,15 @@ class BreakOverlayWindow: NSWindow {
         postpone5Button = createStyledButton(title: "", action: #selector(postpone5ButtonClicked))
         postpone5Button.keyEquivalent = "5"
         postpone5Button.keyEquivalentModifierMask = .command
+
+        skipButton = createStyledButton(title: "", action: #selector(skipButtonClicked))
+        skipButton.isHidden = true
+
+        let actionStack = NSStackView(views: [postpone1Button, postpone2Button, postpone5Button, skipButton])
+        actionStack.orientation = .horizontal
+        actionStack.alignment = .centerY
+        actionStack.spacing = 20
+        actionStack.translatesAutoresizingMaskIntoConstraints = false
         
         // 创建底部状态标签
         postponeStatusLabel = NSTextField(labelWithString: "")
@@ -206,9 +219,7 @@ class BreakOverlayWindow: NSWindow {
         mainContainer.addSubview(titleLabel)
         mainContainer.addSubview(countdownContainer)
         mainContainer.addSubview(ruleContainer)
-        contentView.addSubview(postpone1Button)
-        contentView.addSubview(postpone2Button)
-        contentView.addSubview(postpone5Button)
+        contentView.addSubview(actionStack)
         contentView.addSubview(postponeStatusLabel)
         
         NSLayoutConstraint.activate([
@@ -238,30 +249,26 @@ class BreakOverlayWindow: NSWindow {
             ruleContainer.leadingAnchor.constraint(equalTo: mainContainer.leadingAnchor, constant: 40),
             ruleContainer.trailingAnchor.constraint(equalTo: mainContainer.trailingAnchor, constant: -40),
             
-            // Button constraints - auto-sizing for multi-language support
-            postpone1Button.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -150),
+            // Action bar constraints - auto-sizing for multi-language support
+            actionStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -150),
+            actionStack.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            actionStack.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 40),
+            actionStack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -40),
+
             postpone1Button.heightAnchor.constraint(equalToConstant: 44),
             postpone1Button.widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
             
-            postpone2Button.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -150),
-            postpone2Button.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             postpone2Button.heightAnchor.constraint(equalToConstant: 44),
             postpone2Button.widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
             
-            postpone5Button.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -150),
             postpone5Button.heightAnchor.constraint(equalToConstant: 44),
             postpone5Button.widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
-            
-            // Horizontal spacing between buttons
-            postpone2Button.leadingAnchor.constraint(greaterThanOrEqualTo: postpone1Button.trailingAnchor, constant: 20),
-            postpone5Button.leadingAnchor.constraint(greaterThanOrEqualTo: postpone2Button.trailingAnchor, constant: 20),
-            
-            // Center the button group
-            postpone1Button.trailingAnchor.constraint(equalTo: postpone2Button.leadingAnchor, constant: -20),
-            postpone2Button.trailingAnchor.constraint(equalTo: postpone5Button.leadingAnchor, constant: -20),
+
+            skipButton.heightAnchor.constraint(equalToConstant: 44),
+            skipButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
 
             // 底部状态标签约束
-            postponeStatusLabel.topAnchor.constraint(equalTo: postpone1Button.bottomAnchor, constant: 20),
+            postponeStatusLabel.topAnchor.constraint(equalTo: actionStack.bottomAnchor, constant: 20),
             postponeStatusLabel.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             postponeStatusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 40),
             postponeStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -40)
@@ -329,9 +336,13 @@ class BreakOverlayWindow: NSWindow {
             NSEvent.removeMonitor(monitor)
         }
         
-        // Set up global key monitor for Command+1, Command+2, Command+5
+        // Set up global key monitor for Command+1, Command+2, Command+5, and Esc
         keyboardMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.keyCode == 53 && modifierFlags.intersection([.command, .option, .control]).isEmpty {
+                self?.attemptSkipFromShortcut()
+                return
+            }
             if modifierFlags == .command {
                 switch event.charactersIgnoringModifiers {
                 case "1":
@@ -398,6 +409,35 @@ class BreakOverlayWindow: NSWindow {
         postponeStatusLabel.isHidden = false
     }
 
+    func updateSkipState(_ state: BreakSkipState) {
+        currentSkipState = state
+        switch state {
+        case .hidden:
+            skipButton.isHidden = true
+            skipButton.isEnabled = false
+        case .locked:
+            skipButton.isHidden = false
+            updateButtonState(skipButton, enabled: false)
+            updateSkipButtonTitle()
+        case .unlocked:
+            skipButton.isHidden = false
+            updateButtonState(skipButton, enabled: true)
+            updateSkipButtonTitle()
+        }
+    }
+
+    private func updateSkipButtonTitle() {
+        guard let localizer else { return }
+        switch currentSkipState {
+        case .hidden:
+            break
+        case .locked(let remainingSeconds):
+            skipButton.title = String(format: localizer("skipBreakCountdownFormat"), remainingSeconds)
+        case .unlocked:
+            skipButton.title = localizer("skipBreak")
+        }
+    }
+
     /// 更新按钮的启用状态和视觉样式
     private func updateButtonState(_ button: NSButton, enabled: Bool) {
         button.isEnabled = enabled
@@ -447,6 +487,7 @@ class BreakOverlayWindow: NSWindow {
         postpone1Button.title = localizer("postpone1")
         postpone2Button.title = localizer("postpone2")
         postpone5Button.title = localizer("postpone5")
+        updateSkipButtonTitle()
     }
     
     @objc private func postpone1ButtonClicked() {
@@ -463,6 +504,22 @@ class BreakOverlayWindow: NSWindow {
         print("🔘 推迟5分钟按钮被点击")
         performPostpone(minutes: 5)
     }
+
+    @objc private func skipButtonClicked() {
+        guard currentSkipState == .unlocked else { return }
+        print("🔘 跳过休息按钮被点击")
+        performSkip()
+    }
+
+    private func attemptSkipFromShortcut() {
+        guard currentSkipState == .unlocked else { return }
+        print("⌨️ Esc 快捷键跳过休息")
+        performSkip()
+    }
+
+    private func performSkip() {
+        breakDelegate?.didRequestSkipBreak()
+    }
     
     private func performPostpone(minutes: Int) {
         // 记录哪个屏幕的窗口被点击
@@ -478,8 +535,12 @@ class BreakOverlayWindow: NSWindow {
     // Override keyboard event handling for shortcuts
     override func keyDown(with event: NSEvent) {
         let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let _ = event.keyCode
-        
+
+        if event.keyCode == 53 && modifierFlags.intersection([.command, .option, .control]).isEmpty {
+            attemptSkipFromShortcut()
+            return
+        }
+
         // Check for Command key modifier
         if modifierFlags == .command {
             switch event.charactersIgnoringModifiers {

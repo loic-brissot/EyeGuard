@@ -21,6 +21,11 @@
 "postpone1" = "推迟 1 分钟 (⌘1)";
 "postpone2" = "推迟 2 分钟 (⌘2)";
 "postpone5" = "推迟 5 分钟 (⌘5)";
+"skipBreak" = "跳过 (Esc)";
+"skipBreakCountdownFormat" = "跳过 (%d秒)";
+"strictMode" = "严格模式（禁止跳过）";
+"skipDelay" = "跳过延迟";
+"skipDelayNone" = "无 (0 秒)";
 "postponed" = "推迟";
 "postponeBreakCountdown" = "推迟休息";
 "postpone_status" = "已推迟 %d 分钟，剩余可推迟 %d 分钟";

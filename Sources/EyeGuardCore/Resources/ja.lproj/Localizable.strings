@@ -21,6 +21,11 @@
 "postpone1" = "1分延期 (⌘1)";
 "postpone2" = "2分延期 (⌘2)";
 "postpone5" = "5分延期 (⌘5)";
+"skipBreak" = "スキップ (Esc)";
+"skipBreakCountdownFormat" = "スキップ (%d秒)";
+"strictMode" = "厳格モード（スキップ無効）";
+"skipDelay" = "スキップ待機時間";
+"skipDelayNone" = "なし (0秒)";
 "postponed" = "延期";
 "postponeBreakCountdown" = "休憩延期中";
 "postpone_status" = "%d分延期済み、残り%d分";

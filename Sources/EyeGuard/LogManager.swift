@@ -370,6 +370,15 @@ extension LogManager {
         ]
         logEvent(.breakPostponed, duration: partialDuration, context: context)
     }
+
+    func logBreakSkipped(actualDuration: TimeInterval, expectedDuration: Int, reason: String = "user_skipped") {
+        let context: [String: String] = [
+            "expected_duration": "\(expectedDuration)",
+            "actual_duration": String(format: "%.1f", actualDuration),
+            "reason": reason
+        ]
+        logEvent(.breakSkipped, duration: actualDuration, context: context)
+    }
     
     func logSettingsChanged(changes: [String: String]) {
         logEvent(.settingsChanged, context: changes)
