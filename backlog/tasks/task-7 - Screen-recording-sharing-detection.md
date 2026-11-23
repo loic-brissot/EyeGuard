@@ -4,9 +4,9 @@ title: Screen recording / sharing detection
 status: To Do
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
+updated_date: '2026-11-23T16:31:00Z'
 labels:
   - smart-pause
-  - lookaway-inspired
 milestone: m-1
 dependencies: []
 priority: high

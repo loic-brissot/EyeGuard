@@ -4,11 +4,10 @@ title: Pre-break heads-up & countdown
 status: To Do
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
+updated_date: '2026-11-23T16:31:00Z'
 labels:
   - overlay
   - ux
-  - lookaway-inspired
-  - timeout-inspired
 milestone: m-0
 dependencies: []
 priority: high

@@ -4,10 +4,10 @@ title: Calendar-event-driven breaks
 status: To Do
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
+updated_date: '2026-11-23T16:31:00Z'
 labels:
   - scheduling
   - calendar
-  - timeout-inspired
 milestone: m-2
 dependencies: []
 priority: medium

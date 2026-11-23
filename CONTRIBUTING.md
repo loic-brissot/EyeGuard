@@ -63,11 +63,11 @@ Run `make run` (or `make install && make launch`) and verify:
 
 # Versioning & Releases
 
-EyeGuard follows **[Semantic Versioning](https://semver.org/)** (`MAJOR.MINOR.PATCH`):
+EyeGuard uses milestone-driven **[Semantic Versioning](https://semver.org/)** (`MAJOR.MINOR.PATCH`):
 
-- `PATCH` (`0.1.x`) — backwards-compatible bug fixes and polish.
-- `MINOR` (`0.x.0`) — backwards-compatible new features.
-- `MAJOR` (`x.0.0`) — breaking behavioral/storage changes or major architectural milestones.
+- `MAJOR` (`X.0.0`) — reaching a roadmap milestone (`m-0` → `v0.0`, `m-1` → `v1.0`, `m-2` → `v2.0`, …).
+- `MINOR` (`X.Y.0`) — intermediary features delivered between milestones.
+- `PATCH` (`X.Y.Z`) — backwards-compatible bug fixes and polish.
 
 ## Release Checklist
 
