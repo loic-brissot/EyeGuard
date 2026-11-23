@@ -2,6 +2,7 @@ import Foundation
 
 /// Extensible reason describing why Smart Pause is currently holding break transitions.
 public enum SmartPauseReason: Equatable, Sendable {
+    case screenRecordingOrSharing(source: String?)
     case meetingOrCall(appName: String?)
     case fullscreenApp(appName: String?)
     case deepFocusApp(appName: String?)
@@ -73,22 +74,34 @@ public struct SmartPauseEvaluation: Equatable, Sendable {
 }
 
 /// Unified Smart Pause policy evaluating all active auto-pause rules in deterministic precedence:
-/// 1. Active meeting/call (audio input + meeting app rules)
-/// 2. Fullscreen active app (if enabled)
-/// 3. Deep Focus app (frontmost, then open background `.whenOpen`)
+/// 1. Active screen recording / sharing (if enabled)
+/// 2. Active meeting/call (audio input + meeting app rules)
+/// 3. Fullscreen active app (if enabled)
+/// 4. Deep Focus app (frontmost, then open background `.whenOpen`)
 public struct SmartPausePolicy: Sendable {
+    private let screenCapturePolicy = ScreenCapturePausePolicy()
     private let meetingPolicy = MeetingAutoPausePolicy()
     private let focusAppPolicy = FocusAppPausePolicy()
 
     public init() {}
 
     public func evaluate(
+        screenCaptureSettings: ScreenCaptureSettings = ScreenCaptureSettings(),
+        screenCaptureSnapshot: ScreenCaptureSnapshot = .inactive,
         meetingSettings: MeetingAutoPauseSettings,
         focusAppSettings: FocusAppPauseSettings,
         isAudioInputActive: Bool,
         isFrontmostFullscreen: Bool,
         runningApps: [RunningAppInfo]
     ) -> SmartPauseEvaluation {
+        let screenCaptureEvaluation = screenCapturePolicy.evaluate(
+            settings: screenCaptureSettings,
+            snapshot: screenCaptureSnapshot
+        )
+        if screenCaptureEvaluation.isPaused {
+            return screenCaptureEvaluation
+        }
+
         let meetingEvaluation = meetingPolicy.evaluate(
             settings: meetingSettings,
             isAudioInputActive: isAudioInputActive,

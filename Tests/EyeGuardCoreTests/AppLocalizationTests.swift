@@ -157,7 +157,11 @@ final class AppLocalizationTests: XCTestCase {
             "smartPauseMenuFullscreen",
             "smartPauseMenuFullscreenFormat",
             "smartPauseMenuDeepFocus",
-            "smartPauseMenuDeepFocusFormat"
+            "smartPauseMenuDeepFocusFormat",
+            "smartPauseScreenCaptureEnabled",
+            "smartPauseScreenCaptureLimitedPermission",
+            "smartPauseMenuScreenCapture",
+            "smartPauseMenuScreenCaptureFormat"
         ]
 
         for language in AppLocalization.supportedLanguageCodes {

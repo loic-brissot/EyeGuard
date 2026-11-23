@@ -190,3 +190,7 @@
 "smartPauseMenuFullscreenFormat" = "Paused: Fullscreen App (%@)";
 "smartPauseMenuDeepFocus" = "Paused: Deep Focus";
 "smartPauseMenuDeepFocusFormat" = "Paused: Deep Focus (%@)";
+"smartPauseScreenCaptureEnabled" = "Pause During Screen Recording / Sharing";
+"smartPauseScreenCaptureLimitedPermission" = "Limited without Screen Recording permission";
+"smartPauseMenuScreenCapture" = "Paused: Screen Sharing / Recording";
+"smartPauseMenuScreenCaptureFormat" = "Paused: Screen Sharing / Recording (%@)";
