@@ -8,6 +8,7 @@ public enum SmartPauseReason: Equatable, Sendable {
     case fullscreenApp(appName: String?)
     case deepFocusApp(appName: String?)
     case typingOrDragging
+    case userIdle
 
     /// Indicates whether the active pause reason is a fullscreen or video experience (used by TASK-9 soft-break handling).
     public var isFullscreenOrVideo: Bool {
@@ -80,6 +81,7 @@ public struct SmartPauseEvaluation: Equatable, Sendable {
 /// 3. Active busy calendar event (if enabled and authorized)
 /// 4. Fullscreen active app (if enabled)
 /// 5. Deep Focus app (frontmost, then open background `.whenOpen`)
+/// 6. User idle (if enabled and currently idle-paused)
 public struct SmartPausePolicy: Sendable {
     private let screenCapturePolicy = ScreenCapturePausePolicy()
     private let meetingPolicy = MeetingAutoPausePolicy()
@@ -95,6 +97,8 @@ public struct SmartPausePolicy: Sendable {
         calendarSettings: CalendarPauseSettings = CalendarPauseSettings(),
         calendarSnapshot: CalendarSnapshot = .empty,
         focusAppSettings: FocusAppPauseSettings,
+        idleSettings: IdleNaturalBreakSettings = IdleNaturalBreakSettings(),
+        idleState: IdleState = .active,
         isAudioInputActive: Bool,
         isFrontmostFullscreen: Bool,
         runningApps: [RunningAppInfo],
@@ -131,10 +135,24 @@ public struct SmartPausePolicy: Sendable {
             frontmostApp: runningApps.first(where: { $0.isFrontmost }),
             runningApps: runningApps
         )
-        return focusAppPolicy.evaluate(
+        let focusEvaluation = focusAppPolicy.evaluate(
             settings: focusAppSettings,
             snapshot: focusSnapshot
         )
+        if focusEvaluation.isPaused {
+            return focusEvaluation
+        }
+
+        if idleSettings.isEnabled && idleState.isIdlePaused {
+            return SmartPauseEvaluation(
+                isPaused: true,
+                reason: .userIdle,
+                matchedAppName: nil,
+                matchedBundleID: nil
+            )
+        }
+
+        return .activeNone
     }
 }
 

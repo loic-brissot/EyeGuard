@@ -42,6 +42,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let deepFocusApps = "smartPauseDeepFocusApps"
         static let waitForInputEnabled = "smartPauseWaitForInputEnabled"
         static let waitForInputMaxSeconds = "smartPauseWaitForInputMaxSeconds"
+        static let idlePauseEnabled = "smartPauseIdleEnabled"
+        static let idleThresholdSeconds = "smartPauseIdleThresholdSeconds"
     }
 
     private struct SmartPauseSnapshot {
@@ -131,10 +133,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var meetingAutoPauseSettings = MeetingAutoPauseSettings()
     private var calendarPauseSettings = CalendarPauseSettings()
     private var focusAppPauseSettings = FocusAppPauseSettings()
+    private let idleNaturalBreakPolicy = IdleNaturalBreakPolicy()
+    private var idleNaturalBreakSettings = IdleNaturalBreakSettings()
     private lazy var screenCaptureMonitor = ScreenCaptureMonitor()
     private lazy var meetingCallMonitor = MeetingCallMonitor()
     private lazy var calendarEventMonitor = CalendarEventMonitor()
     private lazy var focusAppMonitor = FocusAppMonitor()
+    private lazy var idleMonitor = IdleMonitor()
+    private var idleState: IdleState = .active
     private var smartPauseEvaluation: SmartPauseEvaluation = .activeNone
     private var smartPauseSnapshot: SmartPauseSnapshot?
     private var smartPauseMenuItem: NSMenuItem!
@@ -247,10 +253,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         focusAppMonitor.onUpdate = { [weak self] _ in
             self?.evaluateSmartPause()
         }
+        idleMonitor.onUpdate = { [weak self] _ in
+            self?.evaluateSmartPause()
+        }
         screenCaptureMonitor.start()
         meetingCallMonitor.start()
         calendarEventMonitor.start()
         focusAppMonitor.start()
+        idleMonitor.start()
         schedulingReady = true
         
         // 记录应用启动
@@ -640,6 +650,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         meetingCallMonitor.stop()
         calendarEventMonitor.stop()
         focusAppMonitor.stop()
+        idleMonitor.stop()
         cancelInputDeferral()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays { overlay.hideOverlay() }
@@ -758,6 +769,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             maxWaitThreshold: TimeInterval(validatedMaxWait)
         )
 
+        let idleEnabled: Bool
+        if UserDefaults.standard.object(forKey: SmartPauseDefaults.idlePauseEnabled) != nil {
+            idleEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.idlePauseEnabled)
+        } else {
+            idleEnabled = true
+        }
+        let savedIdleThreshold = UserDefaults.standard.object(forKey: SmartPauseDefaults.idleThresholdSeconds) as? Int
+        let validatedIdleThreshold = IdleNaturalBreakSettings.supportedIdleThresholds.contains(savedIdleThreshold ?? -1)
+            ? (savedIdleThreshold ?? Int(IdleNaturalBreakSettings.defaultIdlePauseThreshold))
+            : Int(IdleNaturalBreakSettings.defaultIdlePauseThreshold)
+        idleNaturalBreakSettings = IdleNaturalBreakSettings(
+            isEnabled: idleEnabled,
+            idlePauseThreshold: TimeInterval(validatedIdleThreshold)
+        )
+
         // Apply the loaded settings
         if isCustomMode {
             currentWorkDuration = customWorkDuration
@@ -796,6 +822,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         UserDefaults.standard.set(inputDeferralSettings.isEnabled, forKey: SmartPauseDefaults.waitForInputEnabled)
         UserDefaults.standard.set(Int(inputDeferralSettings.maxWaitThreshold), forKey: SmartPauseDefaults.waitForInputMaxSeconds)
+        UserDefaults.standard.set(idleNaturalBreakSettings.isEnabled, forKey: SmartPauseDefaults.idlePauseEnabled)
+        UserDefaults.standard.set(Int(idleNaturalBreakSettings.idlePauseThreshold), forKey: SmartPauseDefaults.idleThresholdSeconds)
 
         // 记录设置变更
         let changes: [String: String] = [
@@ -822,7 +850,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "smart_pause_fullscreen_enabled": "\(focusAppPauseSettings.fullscreenPauseEnabled)",
             "smart_pause_deep_focus_count": "\(focusAppPauseSettings.deepFocusApps.count)",
             "smart_pause_wait_for_input_enabled": "\(inputDeferralSettings.isEnabled)",
-            "smart_pause_wait_for_input_max_seconds": "\(Int(inputDeferralSettings.maxWaitThreshold))"
+            "smart_pause_wait_for_input_max_seconds": "\(Int(inputDeferralSettings.maxWaitThreshold))",
+            "smart_pause_idle_enabled": "\(idleNaturalBreakSettings.isEnabled)",
+            "smart_pause_idle_threshold_seconds": "\(Int(idleNaturalBreakSettings.idlePauseThreshold))"
         ]
         eventRecorder.recordSettingsChange(changes: changes)
     }
@@ -1732,6 +1762,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         meetingCallMonitor.stop()
         calendarEventMonitor.stop()
         focusAppMonitor.stop()
+        idleMonitor.stop()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays {
             overlay.hideOverlay()
@@ -3246,6 +3277,23 @@ extension AppDelegate {
         maxWaitItem.submenu = buildMaxWaitThresholdSubmenu()
         submenu.addItem(maxWaitItem)
 
+        let idleEnabledItem = NSMenuItem(
+            title: localized("smartPauseIdleEnabled"),
+            action: #selector(toggleIdlePause),
+            keyEquivalent: ""
+        )
+        idleEnabledItem.target = self
+        idleEnabledItem.state = idleNaturalBreakSettings.isEnabled ? .on : .off
+        submenu.addItem(idleEnabledItem)
+
+        let idleThresholdItem = NSMenuItem(
+            title: localized("smartPauseIdleThreshold"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        idleThresholdItem.submenu = buildIdleThresholdSubmenu()
+        submenu.addItem(idleThresholdItem)
+
         submenu.addItem(NSMenuItem.separator())
 
         let calendarEventsItem = NSMenuItem(
@@ -3613,6 +3661,33 @@ extension AppDelegate {
         return submenu
     }
 
+    private func buildIdleThresholdSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let currentSeconds = Int(idleNaturalBreakSettings.idlePauseThreshold)
+        for seconds in IdleNaturalBreakSettings.supportedIdleThresholds {
+            let key: String
+            switch seconds {
+            case 60:
+                key = "smartPauseIdleThreshold60"
+            case 300:
+                key = "smartPauseIdleThreshold300"
+            default:
+                key = "smartPauseIdleThreshold120"
+            }
+            let item = NSMenuItem(
+                title: localized(key),
+                action: #selector(selectIdleThreshold(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = seconds
+            item.state = currentSeconds == seconds ? .on : .off
+            item.isEnabled = idleNaturalBreakSettings.isEnabled
+            submenu.addItem(item)
+        }
+        return submenu
+    }
+
     @objc private func toggleScreenCapturePause() {
         screenCaptureSettings.isEnabled.toggle()
         saveSettings()
@@ -3709,6 +3784,23 @@ extension AppDelegate {
         if isWaitingForInputDeferral {
             showBreakOverlay()
         }
+    }
+
+    @objc private func toggleIdlePause() {
+        idleNaturalBreakSettings.isEnabled.toggle()
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func selectIdleThreshold(_ sender: NSMenuItem) {
+        let validated = IdleNaturalBreakSettings.supportedIdleThresholds.contains(sender.tag)
+            ? sender.tag
+            : Int(IdleNaturalBreakSettings.defaultIdlePauseThreshold)
+        idleNaturalBreakSettings.idlePauseThreshold = TimeInterval(validated)
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
     }
 
     @objc private func addExcludedApp(_ sender: NSMenuItem) {
@@ -3885,6 +3977,8 @@ extension AppDelegate {
             return localized("smartPauseMenuDeepFocus")
         case .typingOrDragging:
             return inputDeferralMenuStatusText()
+        case .userIdle:
+            return localized("smartPauseMenuIdle")
         }
     }
 
@@ -3961,6 +4055,46 @@ extension AppDelegate {
         let calendarSnapshot = refreshSnapshots ? calendarEventMonitor.currentSnapshot() : calendarEventMonitor.lastSnapshot
         let focusSnapshot = refreshSnapshots ? focusAppMonitor.currentSnapshot() : focusAppMonitor.lastSnapshot
         let runningApps = focusSnapshot.runningApps.isEmpty ? meetingSnapshot.runningApps : focusSnapshot.runningApps
+
+        let nonIdleEvaluation = smartPausePolicy.evaluate(
+            screenCaptureSettings: screenCaptureSettings,
+            screenCaptureSnapshot: screenCaptureSnapshot,
+            meetingSettings: meetingAutoPauseSettings,
+            calendarSettings: calendarPauseSettings,
+            calendarSnapshot: calendarSnapshot,
+            focusAppSettings: focusAppPauseSettings,
+            idleSettings: IdleNaturalBreakSettings(isEnabled: false),
+            idleState: .active,
+            isAudioInputActive: meetingSnapshot.isAudioInputActive,
+            isFrontmostFullscreen: focusSnapshot.isFrontmostFullscreen,
+            runningApps: runningApps
+        )
+
+        let idleSeconds = refreshSnapshots ? idleMonitor.currentIdleSeconds() : idleMonitor.lastIdleSeconds
+        let effectiveIdleSettings = IdleNaturalBreakSettings(
+            isEnabled: idleNaturalBreakSettings.isEnabled,
+            idlePauseThreshold: idleNaturalBreakSettings.idlePauseThreshold,
+            naturalBreakDuration: idleNaturalBreakSettings.idlePauseThreshold + TimeInterval(max(1, currentBreakDuration))
+        )
+        let isFullscreenOrVideoActive = nonIdleEvaluation.isFullscreenOrVideoActive || focusSnapshot.isFrontmostFullscreen
+        let idleResult = idleNaturalBreakPolicy.evaluate(
+            settings: effectiveIdleSettings,
+            currentState: idleState,
+            idleSeconds: idleSeconds,
+            isFullscreenOrVideoActive: isFullscreenOrVideoActive,
+            isOtherSmartPauseActive: nonIdleEvaluation.isPaused
+        )
+        idleState = idleResult.nextState
+
+        if idleResult.transition == .creditNaturalBreakAndReset {
+            smartPauseSnapshot?.shouldResetToFreshWorkOnResume = true
+            smartPauseSnapshot?.hadDeferredBreak = false
+            logSessionDebug("idle_natural_break_credited", context: [
+                "idle_threshold_seconds": "\(Int(effectiveIdleSettings.idlePauseThreshold))",
+                "natural_break_seconds": "\(Int(effectiveIdleSettings.effectiveNaturalBreakDuration))"
+            ])
+        }
+
         let nextEvaluation = smartPausePolicy.evaluate(
             screenCaptureSettings: screenCaptureSettings,
             screenCaptureSnapshot: screenCaptureSnapshot,
@@ -3968,6 +4102,8 @@ extension AppDelegate {
             calendarSettings: calendarPauseSettings,
             calendarSnapshot: calendarSnapshot,
             focusAppSettings: focusAppPauseSettings,
+            idleSettings: effectiveIdleSettings,
+            idleState: idleState,
             isAudioInputActive: meetingSnapshot.isAudioInputActive,
             isFrontmostFullscreen: focusSnapshot.isFrontmostFullscreen,
             runningApps: runningApps

@@ -208,3 +208,9 @@
 "smartPauseCalendarAllCalendars" = "所有日历";
 "smartPauseMenuCalendar" = "已暂停：忙碌日历日程";
 "smartPauseMenuCalendarFormat" = "已暂停：日历日程 (%@)";
+"smartPauseIdleEnabled" = "离开时暂停并计入自然休息";
+"smartPauseIdleThreshold" = "闲置暂停阈值";
+"smartPauseIdleThreshold60" = "1 分钟";
+"smartPauseIdleThreshold120" = "2 分钟";
+"smartPauseIdleThreshold300" = "5 分钟";
+"smartPauseMenuIdle" = "已暂停：离开";

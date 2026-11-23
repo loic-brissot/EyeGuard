@@ -208,3 +208,9 @@
 "smartPauseCalendarAllCalendars" = "すべてのカレンダー";
 "smartPauseMenuCalendar" = "一時停止中: カレンダー予定あり";
 "smartPauseMenuCalendarFormat" = "一時停止中: カレンダー予定 (%@)";
+"smartPauseIdleEnabled" = "離席時に一時停止し自然な休憩として記録";
+"smartPauseIdleThreshold" = "一時停止までの無操作時間";
+"smartPauseIdleThreshold60" = "1分";
+"smartPauseIdleThreshold120" = "2分";
+"smartPauseIdleThreshold300" = "5分";
+"smartPauseMenuIdle" = "一時停止中: 離席";
