@@ -21,6 +21,11 @@
 "postpone1" = "Postpone 1 minute (⌘1)";
 "postpone2" = "Postpone 2 minutes (⌘2)";
 "postpone5" = "Postpone 5 minutes (⌘5)";
+"skipBreak" = "Skip (Esc)";
+"skipBreakCountdownFormat" = "Skip (%ds)";
+"strictMode" = "Strict Mode (Disable Skip)";
+"skipDelay" = "Skip Delay";
+"skipDelayNone" = "None (0 sec)";
 "postponed" = "Postponed";
 "postponeBreakCountdown" = "Postponed Break";
 "postpone_status" = "Postponed %d min, %d min left";

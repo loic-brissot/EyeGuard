@@ -3,6 +3,7 @@ import Foundation
 public enum StatsRecordStatus: String, Codable, Equatable, Sendable {
     case active
     case completed
+    case skipped
     case interrupted
     case unknown
 }
@@ -17,6 +18,7 @@ public enum StatsSessionStatus: String, Codable, Equatable, Sendable {
 public enum StatsEventType: String, Codable, Equatable, Sendable {
     case appLaunched = "app_launched"
     case appTerminated = "app_terminated"
+    case breakSkipped = "break_skipped"
     case temporaryDisableStarted = "temporary_disable_started"
     case temporaryDisableEnded = "temporary_disable_ended"
     case temporaryDisableExpired = "temporary_disable_expired"
@@ -198,6 +200,7 @@ public struct StatsDaySnapshot: Equatable, Sendable {
     public let workSessions: Int
     public let breakOpportunities: Int
     public let completedBreaks: Int
+    public let skippedBreaks: Int
     public let postponedSessions: Int
     public let totalPostpones: Int
     public let postponesByMinutes: [Int: Int]
@@ -216,6 +219,7 @@ public struct StatsDaySnapshot: Equatable, Sendable {
         workSessions: Int,
         breakOpportunities: Int,
         completedBreaks: Int,
+        skippedBreaks: Int = 0,
         postponedSessions: Int,
         totalPostpones: Int,
         postponesByMinutes: [Int: Int],
@@ -233,6 +237,7 @@ public struct StatsDaySnapshot: Equatable, Sendable {
         self.workSessions = workSessions
         self.breakOpportunities = breakOpportunities
         self.completedBreaks = completedBreaks
+        self.skippedBreaks = skippedBreaks
         self.postponedSessions = postponedSessions
         self.totalPostpones = totalPostpones
         self.postponesByMinutes = postponesByMinutes
@@ -470,6 +475,7 @@ public struct StatsEngine: Sendable {
         var workSessions = 0
         var breakOpportunities = 0
         var completedBreaks = 0
+        var skippedBreaks = 0
         var postponedSessions = 0
         var totalPostpones = 0
         var postponesByMinutes: [Int: Int] = [:]
@@ -520,6 +526,8 @@ public struct StatsEngine: Sendable {
 
             if isCompletedBreak(record) {
                 completedBreaks += 1
+            } else if isSkippedBreak(record) {
+                skippedBreaks += 1
             }
         }
 
@@ -535,6 +543,7 @@ public struct StatsEngine: Sendable {
             workSessions: workSessions,
             breakOpportunities: breakOpportunities,
             completedBreaks: completedBreaks,
+            skippedBreaks: skippedBreaks,
             postponedSessions: postponedSessions,
             totalPostpones: totalPostpones,
             postponesByMinutes: postponesByMinutes,
@@ -680,7 +689,7 @@ public struct StatsEngine: Sendable {
             case .nightOverrideGranted where event.nightKey == nil:
                 summary.nightOverrideCount += 1
                 summary.nightOverrideSeconds += durationSeconds(for: event)
-            case .appLaunched, .appTerminated, .temporaryDisableEnded, .temporaryDisableExpired,
+            case .appLaunched, .appTerminated, .breakSkipped, .temporaryDisableEnded, .temporaryDisableExpired,
                  .nightOverrideRequested, .nightOverrideGranted, .nightOverrideCancelled,
                  .nightOverrideExpired, .unknown:
                 break
@@ -760,6 +769,11 @@ public struct StatsEngine: Sendable {
         return breakRecord.status == .completed
     }
 
+    private func isSkippedBreak(_ record: StatsSessionRecord) -> Bool {
+        guard !record.breakCompleted else { return false }
+        return record.breakRecord?.status == .skipped
+    }
+
     private func collectQualitySignals(from record: StatsSessionRecord, into quality: inout StatsQualitySummary) {
         if let breakRecord = record.breakRecord {
             switch breakRecord.status {
@@ -769,7 +783,7 @@ public struct StatsEngine: Sendable {
             case .interrupted:
                 quality.interruptedBreakRecords += 1
                 quality.interruptedBreakSessionIDs.append(record.id)
-            case .completed, .unknown:
+            case .completed, .skipped, .unknown:
                 break
             }
         }

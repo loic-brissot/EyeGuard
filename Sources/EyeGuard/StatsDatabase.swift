@@ -829,6 +829,101 @@ class StatsDatabase {
         }
     }
 
+    func skipBreak() {
+        dbQueue.async { [weak self] in
+            guard let self = self, self.isValid else { return }
+
+            do {
+                try self.withTransaction {
+                    let findSQL = """
+                        SELECT id FROM sessions
+                        WHERE break_info IS NOT NULL
+                          AND break_completed = 0
+                          AND type = 'work'
+                        ORDER BY start_time DESC
+                        LIMIT 1
+                    """
+
+                    var findStmt: OpaquePointer?
+                    defer { sqlite3_finalize(findStmt) }
+
+                    guard sqlite3_prepare_v2(self.db, findSQL, -1, &findStmt, nil) == SQLITE_OK,
+                          sqlite3_step(findStmt) == SQLITE_ROW else {
+                        print("⚠️ No session with incomplete break found to skip")
+                        self.logDebug("skip_break_no_target")
+                        return
+                    }
+
+                    let sessionId = sqlite3_column_int64(findStmt, 0)
+                    let selectSQL = "SELECT break_info FROM sessions WHERE id = ?"
+                    var selectStmt: OpaquePointer?
+                    defer { sqlite3_finalize(selectStmt) }
+
+                    guard sqlite3_prepare_v2(self.db, selectSQL, -1, &selectStmt, nil) == SQLITE_OK else {
+                        throw DatabaseError.queryFailed("Failed to prepare select break_info for skip")
+                    }
+
+                    sqlite3_bind_int64(selectStmt, 1, sessionId)
+
+                    var breakInfo: BreakInfo?
+                    if sqlite3_step(selectStmt) == SQLITE_ROW,
+                       let jsonPtr = sqlite3_column_text(selectStmt, 0) {
+                        breakInfo = self.parseBreakInfo(String(cString: jsonPtr))
+                    }
+
+                    guard var breakInfo = breakInfo else {
+                        print("⚠️ No active break to skip")
+                        return
+                    }
+
+                    let now = Date().timeIntervalSince1970
+                    try self.closeOpenPostponesInternal(sessionId: sessionId, at: now, activeStatus: "completed")
+                    breakInfo.end_time = now
+                    breakInfo.actual_duration = max(0, Int(now - breakInfo.start_time))
+                    breakInfo.status = "skipped"
+
+                    let breakInfoJSON = self.serializeBreakInfo(breakInfo)
+                    let updateSQL = """
+                        UPDATE sessions
+                        SET break_info = ?,
+                            break_completed = 0
+                        WHERE id = ?
+                    """
+
+                    var statement: OpaquePointer?
+                    defer { sqlite3_finalize(statement) }
+
+                    guard sqlite3_prepare_v2(self.db, updateSQL, -1, &statement, nil) == SQLITE_OK else {
+                        throw DatabaseError.queryFailed("Failed to prepare skip break")
+                    }
+
+                    if let json = breakInfoJSON {
+                        sqlite3_bind_text(statement, 1, (json as NSString).utf8String, -1, nil)
+                    } else {
+                        sqlite3_bind_null(statement, 1)
+                    }
+                    sqlite3_bind_int64(statement, 2, sessionId)
+
+                    guard sqlite3_step(statement) == SQLITE_DONE else {
+                        throw DatabaseError.queryFailed("Failed to skip break")
+                    }
+
+                    print("📊 Skipped break for session #\(sessionId)")
+                    self.logDebug("skip_break_marked", context: [
+                        "session_id": "\(sessionId)",
+                        "actual_duration": "\(breakInfo.actual_duration ?? 0)",
+                        "end_time": String(format: "%.3f", now)
+                    ])
+                }
+            } catch {
+                print("❌ Failed to skip break: \(error)")
+                self.logDebug("skip_break_failed", context: [
+                    "error": String(describing: error)
+                ])
+            }
+        }
+    }
+
     func recordPostpone(minutes: Int) {
         dbQueue.async { [weak self] in
             guard let self = self, self.isValid else { return }
