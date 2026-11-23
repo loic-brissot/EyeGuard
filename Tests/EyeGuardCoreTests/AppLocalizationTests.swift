@@ -175,7 +175,13 @@ final class AppLocalizationTests: XCTestCase {
             "smartPauseCalendarNoCalendars",
             "smartPauseCalendarAllCalendars",
             "smartPauseMenuCalendar",
-            "smartPauseMenuCalendarFormat"
+            "smartPauseMenuCalendarFormat",
+            "smartPauseIdleEnabled",
+            "smartPauseIdleThreshold",
+            "smartPauseIdleThreshold60",
+            "smartPauseIdleThreshold120",
+            "smartPauseIdleThreshold300",
+            "smartPauseMenuIdle"
         ]
 
         for language in AppLocalization.supportedLanguageCodes {

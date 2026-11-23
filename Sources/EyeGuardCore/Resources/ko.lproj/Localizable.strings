@@ -208,3 +208,9 @@
 "smartPauseCalendarAllCalendars" = "모든 캘린더";
 "smartPauseMenuCalendar" = "일시 정지됨: 바쁨 캘린더 일정";
 "smartPauseMenuCalendarFormat" = "일시 정지됨: 캘린더 일정 (%@)";
+"smartPauseIdleEnabled" = "유휴 상태일 때 일시 정지 및 자연 휴식 인정";
+"smartPauseIdleThreshold" = "유휴 일시 정지 기준";
+"smartPauseIdleThreshold60" = "1분";
+"smartPauseIdleThreshold120" = "2분";
+"smartPauseIdleThreshold300" = "5분";
+"smartPauseMenuIdle" = "일시 정지됨: 유휴 상태";

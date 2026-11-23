@@ -208,3 +208,9 @@
 "smartPauseCalendarAllCalendars" = "Todos los calendarios";
 "smartPauseMenuCalendar" = "En pausa: Evento de calendario ocupado";
 "smartPauseMenuCalendarFormat" = "En pausa: Evento de calendario (%@)";
+"smartPauseIdleEnabled" = "Pausar al estar inactivo y contar descansos naturales";
+"smartPauseIdleThreshold" = "Umbral de inactividad";
+"smartPauseIdleThreshold60" = "1 min";
+"smartPauseIdleThreshold120" = "2 min";
+"smartPauseIdleThreshold300" = "5 min";
+"smartPauseMenuIdle" = "En pausa: Inactivo";

@@ -1,10 +1,10 @@
 ---
 id: TASK-9
 title: Idle & natural break detection
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
-updated_date: '2026-11-23T16:31:00Z'
+updated_date: '2026-11-23T19:20:00Z'
 labels:
   - smart-pause
 milestone: m-1
@@ -22,7 +22,7 @@ Detect passive user inactivity (via CGEventSource idle time) when the Mac stays 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Configurable idle threshold to pause the countdown and reset after a qualifying natural break
-- [ ] #2 Respects video/fullscreen rules so passive watching is not mistakenly credited as stepping away
-- [ ] #3 Unit tests cover idle pause, natural break credit, and resume edge cases
+- [x] #1 Configurable idle threshold to pause the countdown and reset after a qualifying natural break
+- [x] #2 Respects video/fullscreen rules so passive watching is not mistakenly credited as stepping away
+- [x] #3 Unit tests cover idle pause, natural break credit, and resume edge cases
 <!-- AC:END -->

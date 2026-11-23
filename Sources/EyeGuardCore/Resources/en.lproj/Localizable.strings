@@ -208,3 +208,9 @@
 "smartPauseCalendarAllCalendars" = "All Calendars";
 "smartPauseMenuCalendar" = "Paused: Busy Calendar Event";
 "smartPauseMenuCalendarFormat" = "Paused: Calendar Event (%@)";
+"smartPauseIdleEnabled" = "Pause When Idle & Credit Natural Breaks";
+"smartPauseIdleThreshold" = "Idle Pause Threshold";
+"smartPauseIdleThreshold60" = "1 min";
+"smartPauseIdleThreshold120" = "2 min";
+"smartPauseIdleThreshold300" = "5 min";
+"smartPauseMenuIdle" = "Paused: Idle";
