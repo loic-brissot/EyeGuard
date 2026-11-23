@@ -39,6 +39,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let settings = "calendarBreakSettings"
     }
 
+    private enum ManualBreakDefaults {
+        static let settings = "manualBreakSettings"
+    }
+
     private enum SmartPauseDefaults {
         static let screenCaptureEnabled = "smartPauseScreenCaptureEnabled"
         static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
@@ -142,6 +146,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var calendarBreakState = CalendarBreakRuntimeState()
     private var activeCalendarBreakOccurrence: CalendarBreakOccurrence?
     private var calendarBreaksMenuItem: NSMenuItem!
+
+    // On-demand manual breaks settings & runtime state
+    private let manualBreakPolicy = ManualBreakPolicy()
+    private var manualBreakSettings = ManualBreakSettings()
+    private var activeManualBreak: ActiveManualBreak?
+    private var manualBreakMenuItem: NSMenuItem!
 
     // Night restriction settings
     private var nightPolicy = NightRestrictionPolicy()
@@ -851,6 +861,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             calendarBreakSettings = CalendarBreakSettings()
         }
 
+        if let manualBreakData = UserDefaults.standard.data(forKey: ManualBreakDefaults.settings),
+           let decodedManualBreaks = try? JSONDecoder().decode(ManualBreakSettings.self, from: manualBreakData) {
+            manualBreakSettings = decodedManualBreaks
+        } else {
+            manualBreakSettings = ManualBreakSettings()
+        }
+
         // Apply the loaded settings
         if isCustomMode {
             currentWorkDuration = customWorkDuration
@@ -896,6 +913,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let encodedCalendarBreaks = try? JSONEncoder().encode(calendarBreakSettings) {
             UserDefaults.standard.set(encodedCalendarBreaks, forKey: CalendarBreakDefaults.settings)
+        }
+        if let encodedManualBreaks = try? JSONEncoder().encode(manualBreakSettings) {
+            UserDefaults.standard.set(encodedManualBreaks, forKey: ManualBreakDefaults.settings)
         }
 
         // 记录设置变更
@@ -960,6 +980,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         testBreakItem.target = self
         testBreakItem.keyEquivalentModifierMask = .command
         menu.addItem(testBreakItem)
+
+        setupManualBreakMenu()
 
         temporaryDisableMenuItem = NSMenuItem(title: localized("temporaryDisableOneHour"), action: #selector(toggleTemporaryDisable), keyEquivalent: "d")
         temporaryDisableMenuItem.target = self
@@ -1950,6 +1972,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if manualBreakSettings.isManualOnlyMode {
+            enterManualOnlyIdleState()
+            return
+        }
+
         // 停止当前工作会话（如果有）
         if let startTime = workSessionStartTime {
             let elapsed = Date().timeIntervalSince(startTime)
@@ -1979,6 +2006,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard displaysAreActive else { rescheduleCountdown(); return }
         if applyNightRestrictionState(reason: "start_work_timer") {
             rescheduleCountdown()
+            return
+        }
+
+        if manualBreakSettings.isManualOnlyMode {
+            enterManualOnlyIdleState()
             return
         }
 
@@ -2096,6 +2128,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             title = " " + localized("smartPauseStatusBar")
         } else if isWaitingForInputDeferral {
             title = " " + localized("smartPauseWaitingStatusBar")
+        } else if manualBreakSettings.isManualOnlyMode {
+            title = " " + localized("manualBreakStatusBar")
         } else if showCountdownInStatusBar {
             if let start = postponeStartTime {
                 title = " " + formatStatusBarTime(CountdownTiming.secondsRemaining(until: start.addingTimeInterval(postponeDuration), now: now))
@@ -2300,6 +2334,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         postponeStartTime = nil
         postponeDuration = 0
         totalPostponedTime = 0
+        activeManualBreak = nil
+        activeBreakDurationOverrideSeconds = nil
         saveCurrentSessionState()
 
         for screen in NSScreen.screens {
@@ -2415,6 +2451,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             timerMenuItem.title = smartPauseMenuStatusText()
         } else if isWaitingForInputDeferral {
             timerMenuItem.title = inputDeferralMenuStatusText()
+        } else if manualBreakSettings.isManualOnlyMode {
+            timerMenuItem.title = localized("manualBreakMenuIdleStatus")
         } else if isPostponeActive {
             // 推迟期间显示推迟倒计时
             let totalSeconds = Int(postponeTimeRemaining)
@@ -2744,17 +2782,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let overlay = BreakOverlayWindow(screen: screen)
             overlay.breakDelegate = self
             overlay.setLocalizer(localized)
-            let breakTitle: String?
-            if let planned = activePlannedBreakOccurrence {
-                breakTitle = planned.schedule.name
+            if let manual = activeManualBreak {
+                let manualTitle = manual.title.isEmpty ? localized("manualBreakDefaultTitle") : manual.title
+                overlay.configureNamedBreak(title: manualTitle, formatKey: "manualBreakOverlayFormat")
+            } else if let planned = activePlannedBreakOccurrence {
+                overlay.configureNamedBreak(title: planned.schedule.name, formatKey: "plannedBreakOverlayFormat")
             } else if let calendarOccurrence = activeCalendarBreakOccurrence {
-                breakTitle = calendarOccurrence.title.isEmpty
+                let calendarTitle = calendarOccurrence.title.isEmpty
                     ? localized("calendarBreakDefaultTitle")
                     : calendarOccurrence.title
+                overlay.configureNamedBreak(title: calendarTitle, formatKey: "plannedBreakOverlayFormat")
             } else {
-                breakTitle = nil
+                overlay.configureNamedBreak(title: nil)
             }
-            overlay.configurePlannedBreak(name: breakTitle)
             overlay.updateCountdown(Int(breakTimeRemaining))
 
             // 更新推迟状态显示
@@ -2843,6 +2883,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 记录休息完成到数据库
         eventRecorder.endBreakSession()
 
+        if let manual = activeManualBreak {
+            activeManualBreak = nil
+            activeBreakDurationOverrideSeconds = nil
+            let action = manualBreakPolicy.finishManualBreak(
+                manual,
+                outcome: .completed,
+                settings: manualBreakSettings,
+                fullWorkDuration: TimeInterval(effectiveWorkDuration),
+                now: Date()
+            )
+            applyManualBreakPostAction(action)
+            isCompletingBreakSession = false
+            return
+        }
+
         startWorkTimer(forceFreshSession: true)
         
         // 清除标志
@@ -2881,6 +2936,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             actualDuration: actualDuration,
             expectedDuration: expected
         )
+
+        if let manual = activeManualBreak {
+            activeManualBreak = nil
+            activeBreakDurationOverrideSeconds = nil
+            let action = manualBreakPolicy.finishManualBreak(
+                manual,
+                outcome: .skipped,
+                settings: manualBreakSettings,
+                fullWorkDuration: TimeInterval(effectiveWorkDuration),
+                now: now
+            )
+            applyManualBreakPostAction(action)
+            isCompletingBreakSession = false
+            return
+        }
 
         startWorkTimer(forceFreshSession: true)
         isCompletingBreakSession = false
@@ -2948,6 +3018,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let activeCalendar = activeCalendarBreakOccurrence {
             calendarBreakState.postpone(activeCalendar, until: now.addingTimeInterval(postponeInterval))
             activeCalendarBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+        }
+        if activeManualBreak != nil {
+            activeManualBreak = nil
             activeBreakDurationOverrideSeconds = nil
         }
 
@@ -3044,6 +3118,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             activeCalendarBreakOccurrence = nil
             activeBreakDurationOverrideSeconds = nil
             calendarBreakState.activeOccurrence = nil
+        }
+        if activeManualBreak != nil {
+            activeManualBreak = nil
+            activeBreakDurationOverrideSeconds = nil
         }
         smartPauseSnapshot = nil
         cancelInputDeferral()
@@ -3253,6 +3331,7 @@ extension AppDelegate: NSMenuDelegate {
         updateSkipDelayMenuStates()
         updateTemporaryDisableMenuItem()
         updateModeMenuStates()
+        rebuildManualBreakMenu()
         rebuildPlannedBreaksMenu()
         rebuildCalendarBreaksMenu()
         rebuildNightRestrictionMenu()
@@ -5110,5 +5189,413 @@ extension AppDelegate {
         rebuildCalendarBreaksMenu()
         evaluateSmartPause(refreshSnapshots: true)
         rescheduleCountdown()
+    }
+}
+
+// MARK: - On-Demand Manual Breaks
+
+extension AppDelegate {
+    private func setupManualBreakMenu() {
+        manualBreakMenuItem = NSMenuItem(title: localized("manualBreakMenuTitle"), action: nil, keyEquivalent: "")
+        manualBreakMenuItem.submenu = buildManualBreakSubmenu()
+        menu.addItem(manualBreakMenuItem)
+    }
+
+    private func rebuildManualBreakMenu() {
+        guard manualBreakMenuItem != nil else { return }
+        manualBreakMenuItem.title = localized("manualBreakMenuTitle")
+        manualBreakMenuItem.submenu = buildManualBreakSubmenu()
+    }
+
+    private func buildManualBreakSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let nightLocked = currentNightStatus().isLocked
+
+        for minutes in ManualBreakPreset.quickDurationMinutes {
+            let item = NSMenuItem(
+                title: String(format: localized("manualBreakQuickDurationFormat"), minutes),
+                action: #selector(startQuickManualBreak(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = minutes * 60
+            item.isEnabled = !nightLocked
+            submenu.addItem(item)
+        }
+
+        let customItem = NSMenuItem(
+            title: localized("manualBreakCustomDurationMenu"),
+            action: #selector(openCustomManualBreakDialog),
+            keyEquivalent: "b"
+        )
+        customItem.target = self
+        customItem.keyEquivalentModifierMask = .command
+        customItem.isEnabled = !nightLocked
+        submenu.addItem(customItem)
+
+        submenu.addItem(NSMenuItem.separator())
+        submenu.addItem(disabledMenuItem(localized("manualBreakPresetsHeader")))
+
+        if manualBreakSettings.presets.isEmpty {
+            submenu.addItem(disabledMenuItem(localized("manualBreakNoPresets")))
+        } else {
+            for preset in manualBreakSettings.presets {
+                let displayName = preset.name.isEmpty ? localized("manualBreakDefaultTitle") : preset.name
+                let title = String(format: localized("manualBreakPresetMenuItemFormat"), displayName, preset.formattedDuration)
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(startManualBreakPreset(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = preset.id.uuidString
+                item.isEnabled = !nightLocked
+
+                let presetSubmenu = NSMenu()
+                let startNowItem = NSMenuItem(
+                    title: localized("manualBreakPresetStart"),
+                    action: #selector(startManualBreakPreset(_:)),
+                    keyEquivalent: ""
+                )
+                startNowItem.target = self
+                startNowItem.representedObject = preset.id.uuidString
+                startNowItem.isEnabled = !nightLocked
+                presetSubmenu.addItem(startNowItem)
+
+                let editItem = NSMenuItem(
+                    title: localized("manualBreakPresetEdit"),
+                    action: #selector(editManualBreakPreset(_:)),
+                    keyEquivalent: ""
+                )
+                editItem.target = self
+                editItem.representedObject = preset.id.uuidString
+                presetSubmenu.addItem(editItem)
+
+                let deleteItem = NSMenuItem(
+                    title: localized("manualBreakPresetDelete"),
+                    action: #selector(deleteManualBreakPreset(_:)),
+                    keyEquivalent: ""
+                )
+                deleteItem.target = self
+                deleteItem.representedObject = preset.id.uuidString
+                presetSubmenu.addItem(deleteItem)
+
+                item.submenu = presetSubmenu
+                submenu.addItem(item)
+            }
+        }
+
+        let addPresetItem = NSMenuItem(
+            title: localized("manualBreakAddPreset"),
+            action: #selector(addManualBreakPreset),
+            keyEquivalent: ""
+        )
+        addPresetItem.target = self
+        submenu.addItem(addPresetItem)
+
+        submenu.addItem(NSMenuItem.separator())
+
+        let manualOnlyItem = NSMenuItem(
+            title: localized("manualBreakManualOnlyMode"),
+            action: #selector(toggleManualOnlyMode),
+            keyEquivalent: ""
+        )
+        manualOnlyItem.target = self
+        manualOnlyItem.state = manualBreakSettings.isManualOnlyMode ? .on : .off
+        submenu.addItem(manualOnlyItem)
+
+        return submenu
+    }
+
+    @objc private func startQuickManualBreak(_ sender: NSMenuItem) {
+        let seconds = manualBreakPolicy.validatedDurationSeconds(sender.tag)
+        startManualBreak(
+            title: localized("manualBreakDefaultTitle"),
+            durationSeconds: seconds,
+            presetID: nil
+        )
+    }
+
+    @objc private func openCustomManualBreakDialog() {
+        guard !currentNightStatus().isLocked else {
+            _ = applyNightRestrictionState(reason: "manual_break_blocked")
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = localized("manualBreakCustomTitle")
+        alert.informativeText = localized("manualBreakCustomMessage")
+        alert.addButton(withTitle: localized("manualBreakStartButton"))
+        alert.addButton(withTitle: localized("manualBreakCancelButton"))
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 150))
+
+        let minutesLabel = NSTextField(labelWithString: localized("manualBreakDurationMinutesLabel"))
+        minutesLabel.frame = NSRect(x: 0, y: 126, width: 200, height: 18)
+        container.addSubview(minutesLabel)
+
+        let minutesField = NSTextField(frame: NSRect(x: 0, y: 98, width: 140, height: 24))
+        minutesField.integerValue = 5
+        container.addSubview(minutesField)
+
+        let secondsLabel = NSTextField(labelWithString: localized("manualBreakDurationSecondsLabel"))
+        secondsLabel.frame = NSRect(x: 160, y: 126, width: 160, height: 18)
+        container.addSubview(secondsLabel)
+
+        let secondsField = NSTextField(frame: NSRect(x: 160, y: 98, width: 140, height: 24))
+        secondsField.integerValue = 0
+        container.addSubview(secondsField)
+
+        let savePresetCheckbox = NSButton(checkboxWithTitle: localized("manualBreakSaveAsPresetCheckbox"), target: nil, action: nil)
+        savePresetCheckbox.frame = NSRect(x: 0, y: 66, width: 320, height: 20)
+        savePresetCheckbox.state = .off
+        container.addSubview(savePresetCheckbox)
+
+        let nameLabel = NSTextField(labelWithString: localized("manualBreakPresetNameLabel"))
+        nameLabel.frame = NSRect(x: 0, y: 38, width: 320, height: 18)
+        container.addSubview(nameLabel)
+
+        let nameField = NSTextField(frame: NSRect(x: 0, y: 8, width: 320, height: 24))
+        nameField.placeholderString = localized("manualBreakPresetNamePlaceholder")
+        container.addSubview(nameField)
+
+        alert.accessoryView = container
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let mins = max(0, minutesField.integerValue)
+        let secs = max(0, min(59, secondsField.integerValue))
+        let totalSeconds = manualBreakPolicy.validatedDurationSeconds(minutes: mins, seconds: secs)
+        let trimmedName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = trimmedName.isEmpty ? localized("manualBreakDefaultTitle") : trimmedName
+
+        var savedPresetID: UUID?
+        if savePresetCheckbox.state == .on {
+            let preset = ManualBreakPreset(name: title, durationSeconds: totalSeconds)
+            manualBreakSettings.add(preset)
+            savedPresetID = preset.id
+            saveSettings()
+            rebuildManualBreakMenu()
+        }
+
+        startManualBreak(
+            title: title,
+            durationSeconds: totalSeconds,
+            presetID: savedPresetID
+        )
+    }
+
+    @objc private func startManualBreakPreset(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID),
+              let preset = manualBreakSettings.presets.first(where: { $0.id == id }) else {
+            return
+        }
+        let title = preset.name.isEmpty ? localized("manualBreakDefaultTitle") : preset.name
+        startManualBreak(
+            title: title,
+            durationSeconds: preset.durationSeconds,
+            presetID: preset.id,
+            completionBehaviorOverride: preset.completionBehavior
+        )
+    }
+
+    @objc private func addManualBreakPreset() {
+        promptManualBreakPresetEditor(existing: nil)
+    }
+
+    @objc private func editManualBreakPreset(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID),
+              let existing = manualBreakSettings.presets.first(where: { $0.id == id }) else {
+            return
+        }
+        promptManualBreakPresetEditor(existing: existing)
+    }
+
+    @objc private func deleteManualBreakPreset(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID) else {
+            return
+        }
+        manualBreakSettings.remove(id: id)
+        saveSettings()
+        rebuildManualBreakMenu()
+    }
+
+    private func promptManualBreakPresetEditor(existing: ManualBreakPreset?) {
+        let alert = NSAlert()
+        alert.messageText = existing == nil ? localized("manualBreakPresetCreateTitle") : localized("manualBreakPresetEditTitle")
+        alert.addButton(withTitle: localized("manualBreakSaveButton"))
+        alert.addButton(withTitle: localized("manualBreakCancelButton"))
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 118))
+
+        let nameLabel = NSTextField(labelWithString: localized("manualBreakPresetNameLabel"))
+        nameLabel.frame = NSRect(x: 0, y: 94, width: 320, height: 18)
+        container.addSubview(nameLabel)
+
+        let nameField = NSTextField(frame: NSRect(x: 0, y: 66, width: 320, height: 24))
+        nameField.placeholderString = localized("manualBreakPresetNamePlaceholder")
+        nameField.stringValue = existing?.name ?? ""
+        container.addSubview(nameField)
+
+        let minutesLabel = NSTextField(labelWithString: localized("manualBreakDurationMinutesLabel"))
+        minutesLabel.frame = NSRect(x: 0, y: 38, width: 150, height: 18)
+        container.addSubview(minutesLabel)
+
+        let minutesField = NSTextField(frame: NSRect(x: 0, y: 10, width: 140, height: 24))
+        minutesField.integerValue = (existing?.durationSeconds ?? 300) / 60
+        container.addSubview(minutesField)
+
+        let secondsLabel = NSTextField(labelWithString: localized("manualBreakDurationSecondsLabel"))
+        secondsLabel.frame = NSRect(x: 160, y: 38, width: 160, height: 18)
+        container.addSubview(secondsLabel)
+
+        let secondsField = NSTextField(frame: NSRect(x: 160, y: 10, width: 140, height: 24))
+        secondsField.integerValue = (existing?.durationSeconds ?? 300) % 60
+        container.addSubview(secondsField)
+
+        alert.accessoryView = container
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let trimmedName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = trimmedName.isEmpty ? localized("manualBreakDefaultTitle") : trimmedName
+        let mins = max(0, minutesField.integerValue)
+        let secs = max(0, min(59, secondsField.integerValue))
+        let totalSeconds = manualBreakPolicy.validatedDurationSeconds(minutes: mins, seconds: secs)
+
+        let preset = ManualBreakPreset(
+            id: existing?.id ?? UUID(),
+            name: finalName,
+            durationSeconds: totalSeconds,
+            completionBehavior: existing?.completionBehavior
+        )
+
+        if existing != nil {
+            manualBreakSettings.update(preset)
+        } else {
+            manualBreakSettings.add(preset)
+        }
+        saveSettings()
+        rebuildManualBreakMenu()
+    }
+
+    @objc private func toggleManualOnlyMode() {
+        manualBreakSettings.isManualOnlyMode.toggle()
+        saveSettings()
+
+        if manualBreakSettings.isManualOnlyMode {
+            if breakSessionStartTime == nil {
+                enterManualOnlyIdleState()
+            } else {
+                updateStatusBarTitle()
+                updateMenuTimer()
+            }
+        } else {
+            if breakSessionStartTime == nil && !currentNightStatus().isLocked {
+                restartWorkTimer()
+            } else {
+                updateStatusBarTitle()
+                updateMenuTimer()
+            }
+        }
+
+        rebuildManualBreakMenu()
+    }
+
+    private func startManualBreak(
+        title: String,
+        durationSeconds: Int,
+        presetID: UUID?,
+        completionBehaviorOverride: ManualBreakCompletionBehavior? = nil
+    ) {
+        let now = Date()
+        let nightStatus = currentNightStatus(now: now)
+        let capturedRemaining: TimeInterval?
+        if workSessionStartTime != nil && !isPostponeActive && !manualBreakSettings.isManualOnlyMode {
+            capturedRemaining = remainingWorkTime(at: now, status: nightStatus)
+        } else {
+            capturedRemaining = nil
+        }
+
+        guard let manualBreak = manualBreakPolicy.startManualBreak(
+            title: title,
+            durationSeconds: durationSeconds,
+            presetID: presetID,
+            now: now,
+            currentWorkRemaining: capturedRemaining,
+            isManualOnlyMode: manualBreakSettings.isManualOnlyMode,
+            isNightLocked: nightStatus.isLocked,
+            completionBehaviorOverride: completionBehaviorOverride
+        ) else {
+            _ = applyNightRestrictionState(reason: "manual_break_blocked")
+            return
+        }
+
+        if let startTime = workSessionStartTime {
+            let elapsed = now.timeIntervalSince(startTime)
+            logManager.logWorkPaused(duration: elapsed, reason: "manual_break")
+            eventRecorder.endWorkSession()
+        }
+
+        countdownScheduler.cancel()
+        cancelInputDeferral()
+        dismissPreBreakHUD()
+        postponeStartTime = nil
+        postponeDuration = 0
+        totalPostponedTime = 0
+        activePlannedBreakOccurrence = nil
+        activeCalendarBreakOccurrence = nil
+
+        activeManualBreak = manualBreak
+        activeBreakDurationOverrideSeconds = manualBreak.durationSeconds
+        showBreakOverlay(bypassInputDeferral: true)
+    }
+
+    private func enterManualOnlyIdleState() {
+        cancelInputDeferral()
+        dismissPreBreakHUD()
+        countdownScheduler.cancel()
+        workSessionStartTime = nil
+        breakSessionStartTime = nil
+        postponeStartTime = nil
+        postponeDuration = 0
+        totalPostponedTime = 0
+        isPausedBySystemEvent = false
+        updateStatusBarTitle()
+        updateMenuTimer()
+        saveCurrentSessionState()
+        rescheduleCountdown()
+    }
+
+    private func applyManualBreakPostAction(_ action: ManualBreakPostAction) {
+        switch action {
+        case .idleManualOnly:
+            enterManualOnlyIdleState()
+        case .resetWorkCycle:
+            startWorkTimer(forceFreshSession: true)
+        case .restoreWorkCycle(let remainingSeconds):
+            cancelInputDeferral()
+            let now = Date()
+            let fullDuration = TimeInterval(effectiveWorkDuration)
+            let clampedRemaining = min(fullDuration, max(1, remainingSeconds))
+            workSessionStartTime = now.addingTimeInterval(-(fullDuration - clampedRemaining))
+            breakSessionStartTime = nil
+            postponeStartTime = nil
+            postponeDuration = 0
+            totalPostponedTime = 0
+            isPausedBySystemEvent = false
+
+            logSessionDebug("manual_break_restored_work_session", context: [
+                "remaining_seconds": "\(Int(clampedRemaining))"
+            ])
+            eventRecorder.startWorkSession(duration: effectiveWorkDuration)
+            updateStatusBarTitle()
+            updateMenuTimer()
+            saveCurrentSessionState()
+            rescheduleCountdown()
+        }
     }
 }
