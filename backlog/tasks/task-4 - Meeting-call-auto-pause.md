@@ -1,7 +1,7 @@
 ---
 id: TASK-4
 title: Meeting / call auto-pause
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
 updated_date: '2026-11-23T16:31:00Z'
@@ -22,7 +22,7 @@ Automatically detect active meetings/calls (via microphone input activity and/or
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Breaks automatically pause while an audio input device is active in a meeting/call
-- [ ] #2 Users can exclude specific non-meeting apps that use the microphone
-- [ ] #3 Menu bar shows the active pause reason and resumes cleanly after the call ends
+- [x] #1 Breaks automatically pause while an audio input device is active in a meeting/call
+- [x] #2 Users can exclude specific non-meeting apps that use the microphone
+- [x] #3 Menu bar shows the active pause reason and resumes cleanly after the call ends
 <!-- AC:END -->
