@@ -19,6 +19,7 @@ class BreakOverlayWindow: NSWindow {
     private var skipButton: NSButton!
     private var postponeStatusLabel: NSTextField!  // 底部状态提示标签
     private var nightWindDownHint: String?
+    private var plannedBreakTitle: String?
     private var currentSkipState: BreakSkipState = .hidden
 
     // Localization closure
@@ -370,12 +371,26 @@ class BreakOverlayWindow: NSWindow {
     func updateCountdown(_ seconds: Int) {
         // 防止显示负数或异常值
         let displaySeconds = max(0, seconds)
-        countdownLabel.stringValue = "\(displaySeconds)"
+        if displaySeconds >= 60 {
+            let minutes = displaySeconds / 60
+            let secs = displaySeconds % 60
+            countdownLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 64, weight: .bold)
+            countdownLabel.stringValue = String(format: "%d:%02d", minutes, secs)
+        } else {
+            countdownLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 80, weight: .bold)
+            countdownLabel.stringValue = "\(displaySeconds)"
+        }
 
         // 如果倒计时为0但窗口仍在显示，可能存在问题
         if displaySeconds == 0 && isVisible {
             print("⚠️ 休息窗口倒计时已为0但仍在显示，可能存在异常")
         }
+    }
+
+    func configurePlannedBreak(name: String?) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        plannedBreakTitle = (trimmed?.isEmpty == false) ? trimmed : nil
+        updateTexts()
     }
     
     /// 更新推迟状态显示（累计时长限制）
@@ -461,7 +476,11 @@ class BreakOverlayWindow: NSWindow {
         // Find and update title label if it exists
         if let mainContainer = contentView?.subviews.first(where: { $0.layer?.cornerRadius == 20 }) {
             if let titleLabel = mainContainer.subviews.first(where: { $0 is NSTextField }) as? NSTextField {
-                titleLabel.stringValue = localizer("breakOverlayTitle")
+                if let plannedBreakTitle {
+                    titleLabel.stringValue = String(format: localizer("plannedBreakOverlayFormat"), plannedBreakTitle)
+                } else {
+                    titleLabel.stringValue = localizer("breakOverlayTitle")
+                }
             }
         }
         

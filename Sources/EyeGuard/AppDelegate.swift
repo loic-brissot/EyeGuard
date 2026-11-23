@@ -31,6 +31,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let until = "temporaryDisableUntil"
     }
 
+    private enum PlannedBreakDefaults {
+        static let settings = "plannedBreakSettings"
+    }
+
     private enum SmartPauseDefaults {
         static let screenCaptureEnabled = "smartPauseScreenCaptureEnabled"
         static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
@@ -119,6 +123,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var strictModeMenuItem: NSMenuItem!
     private var skipDelayMenuItems: [NSMenuItem] = []
 
+    // Planned breaks settings & runtime state
+    private let plannedBreakPolicy = PlannedBreakPolicy()
+    private var plannedBreakSettings = PlannedBreakSettings()
+    private var plannedBreakState = PlannedBreakRuntimeState()
+    private var activePlannedBreakOccurrence: PlannedBreakOccurrence?
+    private var activeBreakDurationOverrideSeconds: Int?
+    private var plannedBreaksMenuItem: NSMenuItem!
+    private var awayStartedAtForPlannedBreak: Date?
+
     // Night restriction settings
     private var nightPolicy = NightRestrictionPolicy()
     private var nightOverridePolicy = NightOverridePolicy()
@@ -174,12 +187,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return max(0, TimeInterval(effectiveWorkDuration) - elapsed)
     }
     
+    private var effectiveBreakDuration: Int {
+        activeBreakDurationOverrideSeconds ?? currentBreakDuration
+    }
+
     private var breakTimeRemaining: TimeInterval {
         guard let startTime = breakSessionStartTime else {
-            return TimeInterval(currentBreakDuration)
+            return TimeInterval(effectiveBreakDuration)
         }
         let elapsed = Date().timeIntervalSince(startTime)
-        return max(0, TimeInterval(currentBreakDuration) - elapsed)
+        return max(0, TimeInterval(effectiveBreakDuration) - elapsed)
     }
     
     private var isWorkSessionActive: Bool {
@@ -517,7 +534,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if let start = postponeStartTime {
             phase = .postponed(until: start.addingTimeInterval(postponeDuration))
         } else if let start = breakSessionStartTime {
-            phase = .rest(until: start.addingTimeInterval(TimeInterval(currentBreakDuration)))
+            phase = .rest(until: start.addingTimeInterval(TimeInterval(effectiveBreakDuration)))
         } else if let start = workSessionStartTime {
             phase = .work(until: start.addingTimeInterval(TimeInterval(status.effectiveWorkDurationSeconds)))
         } else {
@@ -538,10 +555,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .rest, .temporarilyDisabled, .nightLocked, .paused:
             preBreakLeadTimeSeconds = 0
         }
+        let plannedBreakTransition: Date?
+        if status.isLocked || isTemporaryDisableActive || breakSessionStartTime != nil {
+            plannedBreakTransition = nil
+        } else {
+            plannedBreakTransition = plannedBreakPolicy.nextBoundary(
+                settings: plannedBreakSettings,
+                state: plannedBreakState,
+                now: now
+            )
+        }
         return CountdownTiming.plan(
             now: now, phase: phase,
             nightTransition: nightPolicy.nextTransition(after: now, status: status, isEnabled: nightRestrictionSettings.isEnabled),
             overrideUntil: nightOverrideState?.until,
+            plannedBreakTransition: plannedBreakTransition,
             showStatusCountdown: showCountdownInStatusBar,
             menuIsOpen: menuIsOpen, displaysAreActive: displaysAreActive,
             preBreakLeadTimeSeconds: preBreakLeadTimeSeconds
@@ -568,7 +596,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshCountdownDisplay(now: Date, status: NightRestrictionStatus) {
         guard displaysAreActive else { return }
         if let start = breakSessionStartTime {
-            let remaining = CountdownTiming.secondsRemaining(until: start.addingTimeInterval(TimeInterval(currentBreakDuration)), now: now)
+            let remaining = CountdownTiming.secondsRemaining(until: start.addingTimeInterval(TimeInterval(effectiveBreakDuration)), now: now)
             let skipState = breakSkipPolicy.state(settings: breakSkipSettings, breakStartTime: start, now: now)
             for overlay in breakOverlays {
                 overlay.updateCountdown(remaining)
@@ -599,6 +627,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updateNightLockTimer()
         } else if !displaysAreActive {
             _ = applyNightRestrictionState(reason: "scheduled_while_paused")
+        } else if evaluatePlannedBreaks(now: Date()) {
+            // Planned break evaluation handled the deadline
         } else if postponeStartTime != nil {
             updatePostponeTimer()
         } else if breakSessionStartTime != nil {
@@ -784,6 +814,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             idlePauseThreshold: TimeInterval(validatedIdleThreshold)
         )
 
+        if let plannedBreakData = UserDefaults.standard.data(forKey: PlannedBreakDefaults.settings),
+           let decodedPlannedBreaks = try? JSONDecoder().decode(PlannedBreakSettings.self, from: plannedBreakData) {
+            plannedBreakSettings = decodedPlannedBreaks
+        } else {
+            plannedBreakSettings = PlannedBreakSettings()
+        }
+
         // Apply the loaded settings
         if isCustomMode {
             currentWorkDuration = customWorkDuration
@@ -824,6 +861,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(Int(inputDeferralSettings.maxWaitThreshold), forKey: SmartPauseDefaults.waitForInputMaxSeconds)
         UserDefaults.standard.set(idleNaturalBreakSettings.isEnabled, forKey: SmartPauseDefaults.idlePauseEnabled)
         UserDefaults.standard.set(Int(idleNaturalBreakSettings.idlePauseThreshold), forKey: SmartPauseDefaults.idleThresholdSeconds)
+        if let encodedPlannedBreaks = try? JSONEncoder().encode(plannedBreakSettings) {
+            UserDefaults.standard.set(encodedPlannedBreaks, forKey: PlannedBreakDefaults.settings)
+        }
 
         // 记录设置变更
         let changes: [String: String] = [
@@ -852,7 +892,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "smart_pause_wait_for_input_enabled": "\(inputDeferralSettings.isEnabled)",
             "smart_pause_wait_for_input_max_seconds": "\(Int(inputDeferralSettings.maxWaitThreshold))",
             "smart_pause_idle_enabled": "\(idleNaturalBreakSettings.isEnabled)",
-            "smart_pause_idle_threshold_seconds": "\(Int(idleNaturalBreakSettings.idlePauseThreshold))"
+            "smart_pause_idle_threshold_seconds": "\(Int(idleNaturalBreakSettings.idlePauseThreshold))",
+            "planned_breaks_count": "\(plannedBreakSettings.schedules.count)"
         ]
         eventRecorder.recordSettingsChange(changes: changes)
     }
@@ -898,6 +939,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         
         setupModeMenu()
+        setupPlannedBreaksMenu()
         setupNightRestrictionMenu()
         setupSmartPauseMenu()
         
@@ -2542,8 +2584,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if !bypassInputDeferral, shouldDeferBreakForInputActivity() {
+        if !bypassInputDeferral, activePlannedBreakOccurrence == nil, shouldDeferBreakForInputActivity() {
             return
+        }
+
+        if activePlannedBreakOccurrence == nil {
+            let now = Date()
+            let evaluation = plannedBreakPolicy.evaluate(
+                settings: plannedBreakSettings,
+                state: plannedBreakState,
+                now: now,
+                smartPauseEvaluation: smartPauseEvaluation,
+                isNightLocked: currentNightStatus(now: now).isLocked,
+                isTemporarilyDisabled: isTemporaryDisableActive
+            )
+            plannedBreakState = evaluation.nextState
+            switch evaluation.decision {
+            case .trigger(let occurrence, let remainingSeconds):
+                activePlannedBreakOccurrence = occurrence
+                plannedBreakState.activeOccurrence = occurrence
+                activeBreakDurationOverrideSeconds = remainingSeconds
+            case .deferredBySmartPause, .creditedAway, .expired, .none:
+                if evaluation.shouldSuppressRegularBreak {
+                    cancelInputDeferral()
+                    workSessionStartTime = nil
+                    postponeStartTime = nil
+                    postponeDuration = 0
+                    logSessionDebug("regular_break_suppressed_by_planned_break", context: [
+                        "planned_break": evaluation.suppressedByOccurrence?.schedule.name ?? "unknown"
+                    ])
+                    updateStatusBarTitle(now: now)
+                    updateMenuTimer(now: now)
+                    rescheduleCountdown()
+                    return
+                }
+            }
         }
 
         cancelInputDeferral()
@@ -2560,6 +2635,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !NSScreen.screens.isEmpty else {
             print("❌ 没有可用屏幕")
             logManager.logEvent(.breakSkipped, context: ["reason": "no_screens_available"])
+            if let active = activePlannedBreakOccurrence {
+                plannedBreakState.markHandled(active, status: .expired)
+                activePlannedBreakOccurrence = nil
+                activeBreakDurationOverrideSeconds = nil
+            }
             // 屏幕不可用，延迟1秒后重新开始工作会话
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.startWorkTimer()
@@ -2575,7 +2655,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         saveCurrentSessionState()
 
         // 使用新的事件记录器
-        eventRecorder.startBreakSession(duration: currentBreakDuration)
+        eventRecorder.startBreakSession(duration: effectiveBreakDuration)
 
         // 为每个屏幕创建一个覆盖窗口
         print("🔄 清空旧的 breakOverlays（当前有 \(breakOverlays.count) 个）")
@@ -2588,6 +2668,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let overlay = BreakOverlayWindow(screen: screen)
             overlay.breakDelegate = self
             overlay.setLocalizer(localized)
+            overlay.configurePlannedBreak(name: activePlannedBreakOccurrence?.schedule.name)
             overlay.updateCountdown(Int(breakTimeRemaining))
 
             // 更新推迟状态显示
@@ -2634,8 +2715,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 检测异常情况：如果休息时间已经超过预期很多，可能是系统睡眠导致的
         if let breakStart = breakSessionStartTime {
             let elapsed = Date().timeIntervalSince(breakStart)
-            if elapsed > TimeInterval(currentBreakDuration + 60) { // 超过预期时间1分钟以上
-                print("⚠️ 检测到异常的休息时长: \(elapsed)秒, 预期: \(currentBreakDuration)秒")
+            if elapsed > TimeInterval(effectiveBreakDuration + 60) { // 超过预期时间1分钟以上
+                print("⚠️ 检测到异常的休息时长: \(elapsed)秒, 预期: \(effectiveBreakDuration)秒")
                 print("   可能是系统睡眠导致的，立即完成休息会话")
                 completeBreakSession()
                 return
@@ -2659,7 +2740,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         if let startTime = breakSessionStartTime {
             let actualDuration = Date().timeIntervalSince(startTime)
-            logManager.logBreakCompleted(actualDuration: actualDuration, expectedDuration: currentBreakDuration)
+            logManager.logBreakCompleted(actualDuration: actualDuration, expectedDuration: effectiveBreakDuration)
+        }
+
+        if let active = activePlannedBreakOccurrence {
+            plannedBreakState.markHandled(active, status: .completed)
+            activePlannedBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
         }
 
         // 记录休息完成到数据库
@@ -2688,9 +2775,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         cleanupBreakOverlays()
 
         let actualDuration = max(0, now.timeIntervalSince(breakStart))
+        let expected = effectiveBreakDuration
+        if let active = activePlannedBreakOccurrence {
+            plannedBreakState.markHandled(active, status: .completed)
+            activePlannedBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+        }
         eventRecorder.skipBreakSession(
             actualDuration: actualDuration,
-            expectedDuration: currentBreakDuration
+            expectedDuration: expected
         )
 
         startWorkTimer(forceFreshSession: true)
@@ -2837,6 +2930,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func pauseCurrentSession(reason: String) {
         displaysAreActive = false
+        awayStartedAtForPlannedBreak = awayStartedAtForPlannedBreak ?? Date()
+        if activePlannedBreakOccurrence != nil {
+            activePlannedBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+            plannedBreakState.activeOccurrence = nil
+        }
         smartPauseSnapshot = nil
         cancelInputDeferral()
         inputActivityProvider.resetTracking()
@@ -2887,6 +2986,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func evaluateAndResumeSession(reason: String) {
         displaysAreActive = true
+        let resumeNow = Date()
+        let awayInterval = awayStartedAtForPlannedBreak.map { DateInterval(start: min($0, resumeNow), end: resumeNow) }
+        awayStartedAtForPlannedBreak = nil
         countdownScheduler.cancel()
         // 首先检查并清理任何残留的休息窗口
         logSessionDebug("system_resume_evaluate", context: [
@@ -2927,6 +3029,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         logSessionDebug("system_resume_start_fresh_work", context: [
             "reason": reason
         ])
+        if evaluatePlannedBreaks(now: resumeNow, awayInterval: awayInterval) {
+            return
+        }
         restartWorkTimer()
     }
 }
@@ -3036,6 +3141,7 @@ extension AppDelegate: NSMenuDelegate {
         updateSkipDelayMenuStates()
         updateTemporaryDisableMenuItem()
         updateModeMenuStates()
+        rebuildPlannedBreaksMenu()
         rebuildNightRestrictionMenu()
         rebuildSmartPauseMenu()
         startMenuUpdateTimer()
@@ -3109,6 +3215,11 @@ extension AppDelegate: PreBreakHUDDelegate {
               !isSmartPaused,
               breakSessionStartTime == nil,
               breakOverlays.isEmpty else {
+            dismissPreBreakHUD()
+            return
+        }
+
+        if shouldSuppressRegularBreakForPlannedBreak(now: now) {
             dismissPreBreakHUD()
             return
         }
@@ -4109,6 +4220,15 @@ extension AppDelegate {
             runningApps: runningApps
         )
         applySmartPauseEvaluation(nextEvaluation)
+
+        let now = Date()
+        let awayInterval: DateInterval?
+        if idleResult.transition == .creditNaturalBreakAndReset || idleState.isIdlePaused {
+            awayInterval = DateInterval(start: now.addingTimeInterval(-max(0, idleSeconds)), end: now)
+        } else {
+            awayInterval = nil
+        }
+        _ = evaluatePlannedBreaks(now: now, awayInterval: awayInterval)
     }
 
     private func applySmartPauseEvaluation(_ nextEvaluation: SmartPauseEvaluation) {
@@ -4231,6 +4351,8 @@ extension AppDelegate {
 
         if snapshot?.shouldResetToFreshWorkOnResume == true {
             startWorkTimer(forceFreshSession: true)
+        } else if evaluatePlannedBreaks(now: Date()) {
+            return
         } else if snapshot?.hadDeferredBreak == true {
             showBreakOverlay()
         } else if let remainingPostpone = snapshot?.remainingPostponeTime, remainingPostpone > 0 {
@@ -4251,5 +4373,297 @@ extension AppDelegate {
         } else {
             startWorkTimer()
         }
+    }
+
+    // MARK: - Planned Breaks
+
+    private func shouldSuppressRegularBreakForPlannedBreak(now: Date = Date()) -> Bool {
+        let evaluation = plannedBreakPolicy.evaluate(
+            settings: plannedBreakSettings,
+            state: plannedBreakState,
+            now: now,
+            smartPauseEvaluation: smartPauseEvaluation,
+            isNightLocked: currentNightStatus(now: now).isLocked,
+            isTemporarilyDisabled: isTemporaryDisableActive
+        )
+        return evaluation.shouldSuppressRegularBreak
+    }
+
+    @discardableResult
+    private func evaluatePlannedBreaks(now: Date = Date(), awayInterval: DateInterval? = nil) -> Bool {
+        guard displaysAreActive else { return false }
+        let status = currentNightStatus(now: now)
+        let evaluation = plannedBreakPolicy.evaluate(
+            settings: plannedBreakSettings,
+            state: plannedBreakState,
+            now: now,
+            smartPauseEvaluation: smartPauseEvaluation,
+            awayInterval: awayInterval,
+            isNightLocked: status.isLocked,
+            isTemporarilyDisabled: isTemporaryDisableActive
+        )
+        plannedBreakState = evaluation.nextState
+
+        switch evaluation.decision {
+        case .trigger(let occurrence, let remainingSeconds):
+            triggerPlannedBreak(occurrence, remainingSeconds: remainingSeconds)
+            return true
+        case .creditedAway(let occurrence):
+            logSessionDebug("planned_break_credited_away", context: [
+                "name": occurrence.schedule.name,
+                "start_time": occurrence.schedule.formattedStartTime
+            ])
+            startWorkTimer(forceFreshSession: true)
+            return true
+        case .deferredBySmartPause(let occurrence, let reason):
+            logSessionDebug("planned_break_deferred_smart_pause", context: [
+                "name": occurrence.schedule.name,
+                "reason": "\(String(describing: reason))"
+            ])
+            return false
+        case .expired(let occurrence):
+            logSessionDebug("planned_break_expired", context: [
+                "name": occurrence.schedule.name
+            ])
+            return false
+        case .none:
+            return false
+        }
+    }
+
+    private func triggerPlannedBreak(_ occurrence: PlannedBreakOccurrence, remainingSeconds: Int) {
+        activePlannedBreakOccurrence = occurrence
+        plannedBreakState.activeOccurrence = occurrence
+        activeBreakDurationOverrideSeconds = max(PlannedBreakSchedule.minimumDurationSeconds, remainingSeconds)
+        logSessionDebug("planned_break_triggered", context: [
+            "name": occurrence.schedule.name,
+            "duration_seconds": "\(activeBreakDurationOverrideSeconds ?? occurrence.schedule.durationSeconds)"
+        ])
+        showBreakOverlay(bypassInputDeferral: true)
+    }
+
+    private func setupPlannedBreaksMenu() {
+        plannedBreaksMenuItem = NSMenuItem(title: localized("plannedBreaks"), action: nil, keyEquivalent: "")
+        plannedBreaksMenuItem.submenu = buildPlannedBreaksSubmenu()
+        menu.addItem(plannedBreaksMenuItem)
+    }
+
+    private func rebuildPlannedBreaksMenu() {
+        guard plannedBreaksMenuItem != nil else { return }
+        plannedBreaksMenuItem.title = localized("plannedBreaks")
+        plannedBreaksMenuItem.submenu = buildPlannedBreaksSubmenu()
+    }
+
+    private func buildPlannedBreaksSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let sortedSchedules = plannedBreakSettings.schedules.sorted {
+            if $0.hour != $1.hour { return $0.hour < $1.hour }
+            if $0.minute != $1.minute { return $0.minute < $1.minute }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+
+        if sortedSchedules.isEmpty {
+            submenu.addItem(disabledMenuItem(localized("plannedBreaksNone")))
+        } else {
+            for schedule in sortedSchedules {
+                let displayName = schedule.name.isEmpty ? localized("plannedBreakDefaultName") : schedule.name
+                let title = String(
+                    format: localized("plannedBreakMenuItemFormat"),
+                    displayName,
+                    schedule.formattedStartTime,
+                    schedule.durationMinutes
+                )
+                let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                item.state = schedule.isEnabled ? .on : .off
+
+                let itemSubmenu = NSMenu()
+                let toggleItem = NSMenuItem(
+                    title: localized("plannedBreakEnabled"),
+                    action: #selector(togglePlannedBreakEnabled(_:)),
+                    keyEquivalent: ""
+                )
+                toggleItem.target = self
+                toggleItem.representedObject = schedule.id.uuidString
+                toggleItem.state = schedule.isEnabled ? .on : .off
+                itemSubmenu.addItem(toggleItem)
+
+                let editItem = NSMenuItem(
+                    title: localized("plannedBreakEdit"),
+                    action: #selector(editPlannedBreak(_:)),
+                    keyEquivalent: ""
+                )
+                editItem.target = self
+                editItem.representedObject = schedule.id.uuidString
+                itemSubmenu.addItem(editItem)
+
+                itemSubmenu.addItem(NSMenuItem.separator())
+
+                let deleteItem = NSMenuItem(
+                    title: localized("plannedBreakDelete"),
+                    action: #selector(deletePlannedBreak(_:)),
+                    keyEquivalent: ""
+                )
+                deleteItem.target = self
+                deleteItem.representedObject = schedule.id.uuidString
+                itemSubmenu.addItem(deleteItem)
+
+                item.submenu = itemSubmenu
+                submenu.addItem(item)
+            }
+        }
+
+        submenu.addItem(NSMenuItem.separator())
+
+        let addItem = NSMenuItem(
+            title: localized("plannedBreakAdd"),
+            action: #selector(addPlannedBreak),
+            keyEquivalent: ""
+        )
+        addItem.target = self
+        submenu.addItem(addItem)
+
+        return submenu
+    }
+
+    @objc private func addPlannedBreak() {
+        promptPlannedBreakEditor(existing: nil)
+    }
+
+    @objc private func editPlannedBreak(_ sender: NSMenuItem) {
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString),
+              let existing = plannedBreakSettings.schedules.first(where: { $0.id == id }) else {
+            return
+        }
+        promptPlannedBreakEditor(existing: existing)
+    }
+
+    @objc private func togglePlannedBreakEnabled(_ sender: NSMenuItem) {
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString) else {
+            return
+        }
+        plannedBreakSettings.toggle(id: id)
+        saveSettings()
+        rebuildPlannedBreaksMenu()
+        _ = evaluatePlannedBreaks()
+        rescheduleCountdown()
+    }
+
+    @objc private func deletePlannedBreak(_ sender: NSMenuItem) {
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString) else {
+            return
+        }
+        plannedBreakSettings.remove(id: id)
+        if activePlannedBreakOccurrence?.schedule.id == id {
+            activePlannedBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+            plannedBreakState.activeOccurrence = nil
+        }
+        saveSettings()
+        rebuildPlannedBreaksMenu()
+        rescheduleCountdown()
+    }
+
+    private func promptPlannedBreakEditor(existing: PlannedBreakSchedule?) {
+        let alert = NSAlert()
+        alert.messageText = existing == nil ? localized("plannedBreakCreateTitle") : localized("plannedBreakEditTitle")
+        alert.addButton(withTitle: localized("plannedBreakSave"))
+        alert.addButton(withTitle: localized("nightOverrideCancel"))
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 196))
+
+        let nameLabel = NSTextField(labelWithString: localized("plannedBreakNameLabel"))
+        nameLabel.frame = NSRect(x: 0, y: 172, width: 120, height: 18)
+        let nameField = NSTextField(frame: NSRect(x: 0, y: 144, width: 340, height: 24))
+        nameField.placeholderString = localized("plannedBreakNamePlaceholder")
+        nameField.stringValue = existing?.name ?? ""
+
+        let timeLabel = NSTextField(labelWithString: localized("plannedBreakStartTimeLabel"))
+        timeLabel.frame = NSRect(x: 0, y: 112, width: 150, height: 18)
+        let timePicker = NSDatePicker(frame: NSRect(x: 0, y: 84, width: 140, height: 24))
+        timePicker.datePickerStyle = .textFieldAndStepper
+        timePicker.datePickerElements = .hourMinute
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = existing?.hour ?? 12
+        components.minute = existing?.minute ?? 0
+        components.second = 0
+        timePicker.dateValue = Calendar.current.date(from: components) ?? Date()
+
+        let durationLabel = NSTextField(labelWithString: localized("plannedBreakDurationLabel"))
+        durationLabel.frame = NSRect(x: 170, y: 112, width: 170, height: 18)
+        let durationField = NSTextField(frame: NSRect(x: 170, y: 84, width: 80, height: 24))
+        let initialMinutes = existing?.durationMinutes ?? 15
+        durationField.integerValue = initialMinutes
+        let durationStepper = NSStepper(frame: NSRect(x: 256, y: 82, width: 20, height: 26))
+        durationStepper.minValue = 1
+        durationStepper.maxValue = 180
+        durationStepper.integerValue = initialMinutes
+        durationStepper.target = durationField
+        durationStepper.action = #selector(NSTextField.takeIntegerValueFrom(_:))
+
+        let weekdaysLabel = NSTextField(labelWithString: localized("plannedBreakWeekdaysLabel"))
+        weekdaysLabel.frame = NSRect(x: 0, y: 54, width: 200, height: 18)
+
+        let shortSymbols = Calendar.current.shortWeekdaySymbols
+        let selectedWeekdays = existing?.weekdays ?? PlannedBreakSchedule.workWeekdays
+        var weekdayCheckboxes: [Int: NSButton] = [:]
+        let buttonWidth: CGFloat = 46
+        for dayIndex in 1...7 {
+            let symbol = (dayIndex - 1 < shortSymbols.count) ? shortSymbols[dayIndex - 1] : "\(dayIndex)"
+            let checkbox = NSButton(checkboxWithTitle: symbol, target: nil, action: nil)
+            checkbox.frame = NSRect(x: CGFloat(dayIndex - 1) * (buttonWidth + 2), y: 20, width: buttonWidth, height: 24)
+            checkbox.state = selectedWeekdays.contains(dayIndex) ? .on : .off
+            container.addSubview(checkbox)
+            weekdayCheckboxes[dayIndex] = checkbox
+        }
+
+        container.addSubview(nameLabel)
+        container.addSubview(nameField)
+        container.addSubview(timeLabel)
+        container.addSubview(timePicker)
+        container.addSubview(durationLabel)
+        container.addSubview(durationField)
+        container.addSubview(durationStepper)
+        container.addSubview(weekdaysLabel)
+
+        alert.accessoryView = container
+        alert.window.initialFirstResponder = nameField
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let trimmedName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = trimmedName.isEmpty ? localized("plannedBreakDefaultName") : trimmedName
+        let pickedComponents = Calendar.current.dateComponents([.hour, .minute], from: timePicker.dateValue)
+        let hour = pickedComponents.hour ?? 12
+        let minute = pickedComponents.minute ?? 0
+        let durationMinutes = min(180, max(1, durationField.integerValue > 0 ? durationField.integerValue : durationStepper.integerValue))
+        var weekdays: Set<Int> = []
+        for (dayIndex, checkbox) in weekdayCheckboxes where checkbox.state == .on {
+            weekdays.insert(dayIndex)
+        }
+
+        let schedule = PlannedBreakSchedule(
+            id: existing?.id ?? UUID(),
+            name: finalName,
+            hour: hour,
+            minute: minute,
+            durationMinutes: durationMinutes,
+            weekdays: weekdays,
+            isEnabled: existing?.isEnabled ?? true
+        )
+
+        if existing != nil {
+            plannedBreakSettings.update(schedule)
+        } else {
+            plannedBreakSettings.add(schedule)
+        }
+        saveSettings()
+        rebuildPlannedBreaksMenu()
+        _ = evaluatePlannedBreaks()
+        rescheduleCountdown()
     }
 }
