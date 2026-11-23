@@ -219,6 +219,31 @@ final class AppLocalizationTests: XCTestCase {
         }
     }
 
+    func testCalendarBreakLocalizationsAreComplete() {
+        let requiredKeys: Set<String> = [
+            "calendarBreaks",
+            "calendarBreaksEnabled",
+            "calendarBreaksNoCalendarSelected",
+            "calendarBreaksMissingCalendarFormat",
+            "calendarBreaksSelectCalendar",
+            "calendarBreaksNoneOption",
+            "calendarBreaksMissingOptionFormat",
+            "calendarBreaksTitleFilterAll",
+            "calendarBreaksTitleFilterFormat",
+            "calendarBreaksClearFilter",
+            "calendarBreaksFilterPromptTitle",
+            "calendarBreaksFilterPromptMessage",
+            "calendarBreaksFilterPlaceholder",
+            "calendarBreaksSave",
+            "calendarBreakDefaultTitle"
+        ]
+
+        for language in AppLocalization.supportedLanguageCodes {
+            let keys = AppLocalization.localizationKeys(language: language)
+            XCTAssertTrue(requiredKeys.isSubset(of: keys), "\(language) must include all calendar break keys")
+        }
+    }
+
     func testFindsCoreResourceBundleInStandardAppResourcesDirectory() throws {
         let appURL = temporaryDirectory()
             .appendingPathComponent("EyeGuard.app", isDirectory: true)

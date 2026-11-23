@@ -43,12 +43,13 @@ public enum CountdownTiming {
         nightTransition: Date?,
         overrideUntil: Date?,
         plannedBreakTransition: Date? = nil,
+        calendarBreakTransition: Date? = nil,
         showStatusCountdown: Bool,
         menuIsOpen: Bool,
         displaysAreActive: Bool,
         preBreakLeadTimeSeconds: Int = 0
     ) -> CountdownPlan {
-        let deadline = [phase.deadline, nightTransition, overrideUntil, plannedBreakTransition].compactMap { $0 }.min()
+        let deadline = [phase.deadline, nightTransition, overrideUntil, plannedBreakTransition, calendarBreakTransition].compactMap { $0 }.min()
         return CountdownPlan(
             deadline: deadline.map { max(now, $0) },
             display: displaysAreActive ? nextDisplay(now: now, phase: phase, overrideUntil: overrideUntil,

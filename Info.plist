@@ -29,8 +29,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSCalendarsUsageDescription</key>
-    <string>EyeGuard reads your calendar events to automatically pause eye breaks during busy meetings.</string>
+    <string>EyeGuard reads your calendar events to automatically pause eye breaks during busy meetings and trigger scheduled calendar breaks.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>EyeGuard reads your calendar events to automatically pause eye breaks during busy meetings.</string>
+    <string>EyeGuard reads your calendar events to automatically pause eye breaks during busy meetings and trigger scheduled calendar breaks.</string>
 </dict>
 </plist>
