@@ -190,6 +190,35 @@ final class AppLocalizationTests: XCTestCase {
         }
     }
 
+    func testPlannedBreakLocalizationsAreComplete() {
+        let requiredKeys: Set<String> = [
+            "plannedBreaks",
+            "plannedBreaksNone",
+            "plannedBreakAdd",
+            "plannedBreakEnabled",
+            "plannedBreakEdit",
+            "plannedBreakDelete",
+            "plannedBreakCreateTitle",
+            "plannedBreakEditTitle",
+            "plannedBreakNameLabel",
+            "plannedBreakNamePlaceholder",
+            "plannedBreakStartTimeLabel",
+            "plannedBreakDurationLabel",
+            "plannedBreakWeekdaysLabel",
+            "plannedBreakSave",
+            "plannedBreakDefaultName",
+            "plannedBreakOverlayFormat",
+            "plannedBreakMenuItemFormat",
+            "plannedBreakNextMenuFormat",
+            "plannedBreakSuppressedNote"
+        ]
+
+        for language in AppLocalization.supportedLanguageCodes {
+            let keys = AppLocalization.localizationKeys(language: language)
+            XCTAssertTrue(requiredKeys.isSubset(of: keys), "\(language) must include all planned break keys")
+        }
+    }
+
     func testFindsCoreResourceBundleInStandardAppResourcesDirectory() throws {
         let appURL = temporaryDirectory()
             .appendingPathComponent("EyeGuard.app", isDirectory: true)
