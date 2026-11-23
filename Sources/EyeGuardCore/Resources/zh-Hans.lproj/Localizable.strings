@@ -169,3 +169,12 @@
 "smartPauseStatusBar" = "已暂停";
 "smartPauseMenuMeeting" = "已暂停：正在会议/通话中";
 "smartPauseMenuMeetingFormat" = "已暂停：正在会议/通话中 (%@)";
+"smartPauseWaitForInputEnabled" = "等待输入或拖拽完成";
+"smartPauseMaxWait" = "最长等待时间";
+"smartPauseMaxWait30" = "30 秒";
+"smartPauseMaxWait60" = "1 分钟";
+"smartPauseMaxWait120" = "2 分钟";
+"smartPauseWaitingStatusBar" = "等待中";
+"smartPauseMenuWaitingInput" = "等待中：正在输入或拖拽";
+"smartPauseMenuWaitingTyping" = "等待中：正在键盘输入";
+"smartPauseMenuWaitingDragging" = "等待中：正在拖拽鼠标";

@@ -136,7 +136,16 @@ final class AppLocalizationTests: XCTestCase {
             "smartPauseAdd",
             "smartPauseStatusBar",
             "smartPauseMenuMeeting",
-            "smartPauseMenuMeetingFormat"
+            "smartPauseMenuMeetingFormat",
+            "smartPauseWaitForInputEnabled",
+            "smartPauseMaxWait",
+            "smartPauseMaxWait30",
+            "smartPauseMaxWait60",
+            "smartPauseMaxWait120",
+            "smartPauseWaitingStatusBar",
+            "smartPauseMenuWaitingInput",
+            "smartPauseMenuWaitingTyping",
+            "smartPauseMenuWaitingDragging"
         ]
 
         for language in AppLocalization.supportedLanguageCodes {

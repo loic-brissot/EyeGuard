@@ -169,3 +169,12 @@
 "smartPauseStatusBar" = "一時停止";
 "smartPauseMenuMeeting" = "一時停止中: 会議・通話中";
 "smartPauseMenuMeetingFormat" = "一時停止中: 会議・通話中 (%@)";
+"smartPauseWaitForInputEnabled" = "入力・ドラッグ完了を待つ";
+"smartPauseMaxWait" = "最大待機時間";
+"smartPauseMaxWait30" = "30秒";
+"smartPauseMaxWait60" = "1分";
+"smartPauseMaxWait120" = "2分";
+"smartPauseWaitingStatusBar" = "待機中";
+"smartPauseMenuWaitingInput" = "待機中: 入力またはドラッグ中";
+"smartPauseMenuWaitingTyping" = "待機中: キーボード入力中";
+"smartPauseMenuWaitingDragging" = "待機中: マウスドラッグ中";

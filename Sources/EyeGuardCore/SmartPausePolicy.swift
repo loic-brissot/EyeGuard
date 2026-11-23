@@ -3,6 +3,7 @@ import Foundation
 /// Extensible reason describing why Smart Pause is currently holding break transitions.
 public enum SmartPauseReason: Equatable, Sendable {
     case meetingOrCall(appName: String?)
+    case typingOrDragging
 }
 
 /// Lightweight, platform-independent snapshot of a running application for Smart Pause evaluation.
