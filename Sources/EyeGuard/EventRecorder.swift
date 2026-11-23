@@ -74,6 +74,22 @@ class EventRecorder {
         print("📊 EventRecorder: Completed break")
     }
 
+    func skipBreakSession(actualDuration: TimeInterval, expectedDuration: Int) {
+        statsDB.skipBreak()
+        statsDB.recordStatsEvent(StatsEventInput(
+            type: .breakSkipped,
+            durationSeconds: max(0, Int(actualDuration)),
+            context: [
+                "expected_duration": "\(expectedDuration)",
+                "reason": "user_skipped"
+            ]
+        ))
+        logManager.logBreakSkipped(actualDuration: actualDuration, expectedDuration: expectedDuration)
+
+        currentBreakSessionId = nil
+        print("📊 EventRecorder: Skipped break after \(Int(actualDuration))s")
+    }
+
     // MARK: - Postpone Management
 
     func recordPostpone(minutes: Int) {

@@ -87,6 +87,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var showCountdownInStatusBar: Bool = false
     private var showCountdownMenuItem: NSMenuItem!
 
+    // Break skip settings
+    private var breakSkipSettings = BreakSkipSettings()
+    private let breakSkipPolicy = BreakSkipPolicy()
+    private var strictModeMenuItem: NSMenuItem!
+    private var skipDelayMenuItems: [NSMenuItem] = []
+
     // Night restriction settings
     private var nightPolicy = NightRestrictionPolicy()
     private var nightOverridePolicy = NightOverridePolicy()
@@ -460,7 +466,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard displaysAreActive else { return }
         if let start = breakSessionStartTime {
             let remaining = CountdownTiming.secondsRemaining(until: start.addingTimeInterval(TimeInterval(currentBreakDuration)), now: now)
-            for overlay in breakOverlays { overlay.updateCountdown(remaining) }
+            let skipState = breakSkipPolicy.state(settings: breakSkipSettings, breakStartTime: start, now: now)
+            for overlay in breakOverlays {
+                overlay.updateCountdown(remaining)
+                overlay.updateSkipState(skipState)
+            }
         }
         if status.isLocked {
             for overlay in nightLockOverlays {
@@ -568,6 +578,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let savedPostponeLimit = UserDefaults.standard.integer(forKey: "maxPostponeMinutes")
         customPostponeLimitMinutes = [5, 10].contains(savedPostponeLimit) ? savedPostponeLimit : 5
 
+        let isStrictMode = UserDefaults.standard.bool(forKey: "breakStrictMode")
+        let savedSkipDelay = UserDefaults.standard.object(forKey: "breakSkipDelaySeconds") as? Int
+        let skipDelaySeconds = savedSkipDelay.map { BreakSkipSettings.supportedDelaySeconds.contains($0) ? $0 : BreakSkipSettings.defaultDelaySeconds }
+            ?? BreakSkipSettings.defaultDelaySeconds
+        breakSkipSettings = BreakSkipSettings(
+            isStrictMode: isStrictMode,
+            skipDelaySeconds: skipDelaySeconds
+        )
+
         nightRestrictionSettings = NightRestrictionSettings(
             isEnabled: UserDefaults.standard.bool(forKey: "nightRestrictionEnabled"),
             windDownStart: loadClockTime(forKey: "nightWindDownStartMinutes", defaultValue: ClockTime(hour: 20, minute: 0)),
@@ -598,6 +617,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(customBreakDuration, forKey: "customBreakDuration")
         UserDefaults.standard.set(currentLanguage, forKey: "currentLanguage")
         UserDefaults.standard.set(customPostponeLimitMinutes, forKey: "maxPostponeMinutes")
+        UserDefaults.standard.set(breakSkipSettings.isStrictMode, forKey: "breakStrictMode")
+        UserDefaults.standard.set(breakSkipSettings.skipDelaySeconds, forKey: "breakSkipDelaySeconds")
         UserDefaults.standard.set(nightRestrictionSettings.isEnabled, forKey: "nightRestrictionEnabled")
         UserDefaults.standard.set(nightRestrictionSettings.windDownStart.minutesAfterMidnight, forKey: "nightWindDownStartMinutes")
         UserDefaults.standard.set(nightRestrictionSettings.lockStart.minutesAfterMidnight, forKey: "nightLockStartMinutes")
@@ -612,6 +633,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "language": currentLanguage,
             "custom_postpone_limit_minutes": "\(customPostponeLimitMinutes)",
             "effective_postpone_limit_minutes": "\(Int(maxTotalPostponeTime / 60))",
+            "break_strict_mode": "\(breakSkipSettings.isStrictMode)",
+            "break_skip_delay_seconds": "\(breakSkipSettings.skipDelaySeconds)",
             "night_restriction_enabled": "\(nightRestrictionSettings.isEnabled)",
             "night_wind_down_start": nightRestrictionSettings.windDownStart.displayString,
             "night_lock_start": nightRestrictionSettings.lockStart.displayString,
@@ -694,6 +717,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         showCountdownMenuItem.target = self
         updateShowCountdownState()
         menu.addItem(showCountdownMenuItem)
+
+        strictModeMenuItem = NSMenuItem(title: localized("strictMode"), action: #selector(toggleStrictMode), keyEquivalent: "")
+        strictModeMenuItem.target = self
+        updateStrictModeMenuState()
+        menu.addItem(strictModeMenuItem)
+
+        let skipDelayItem = NSMenuItem(title: localized("skipDelay"), action: nil, keyEquivalent: "")
+        let skipDelaySubmenu = NSMenu()
+        skipDelayMenuItems.removeAll()
+        for delay in BreakSkipSettings.supportedDelaySeconds {
+            let title = delay == 0 ? localized("skipDelayNone") : "\(delay) \(localized("seconds"))"
+            let item = NSMenuItem(title: title, action: #selector(selectSkipDelay(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = delay
+            skipDelaySubmenu.addItem(item)
+            skipDelayMenuItems.append(item)
+        }
+        updateSkipDelayMenuStates()
+        skipDelayItem.submenu = skipDelaySubmenu
+        menu.addItem(skipDelayItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -1399,6 +1442,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func updateShowCountdownState() {
         showCountdownMenuItem.state = showCountdownInStatusBar ? .on : .off
+    }
+
+    @objc private func toggleStrictMode() {
+        breakSkipSettings.isStrictMode.toggle()
+        updateStrictModeMenuState()
+        saveSettings()
+        updateBreakOverlaysSkipState()
+    }
+
+    private func updateStrictModeMenuState() {
+        strictModeMenuItem?.state = breakSkipSettings.isStrictMode ? .on : .off
+    }
+
+    @objc private func selectSkipDelay(_ sender: NSMenuItem) {
+        breakSkipSettings.skipDelaySeconds = max(0, sender.tag)
+        updateSkipDelayMenuStates()
+        saveSettings()
+        updateBreakOverlaysSkipState()
+    }
+
+    private func updateSkipDelayMenuStates() {
+        for item in skipDelayMenuItems {
+            item.state = (item.tag == breakSkipSettings.skipDelaySeconds) ? .on : .off
+        }
     }
     
     private func addToLoginItems() {
@@ -2244,6 +2311,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let remainingMinutes = Int((maxTotalPostponeTime - totalPostponedTime) / 60)
             overlay.updatePostponeStatus(used: usedMinutes, remaining: remainingMinutes)
             overlay.setNightWindDownHint(nightWindDownHint(for: currentNightStatus()))
+            overlay.updateSkipState(
+                breakSkipPolicy.state(
+                    settings: breakSkipSettings,
+                    breakStartTime: breakSessionStartTime,
+                    now: Date()
+                )
+            )
 
             overlay.showOverlay()
             breakOverlays.append(overlay)
@@ -2310,6 +2384,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startWorkTimer(forceFreshSession: true)
         
         // 清除标志
+        isCompletingBreakSession = false
+    }
+
+    private func skipBreakSession() {
+        guard !isCompletingBreakSession else { return }
+        guard let breakStart = breakSessionStartTime else { return }
+        let now = Date()
+        guard breakSkipPolicy.isSkipUnlocked(
+            settings: breakSkipSettings,
+            breakStartTime: breakStart,
+            now: now
+        ) else {
+            return
+        }
+
+        isCompletingBreakSession = true
+        countdownScheduler.cancel()
+        cleanupBreakOverlays()
+
+        let actualDuration = max(0, now.timeIntervalSince(breakStart))
+        eventRecorder.skipBreakSession(
+            actualDuration: actualDuration,
+            expectedDuration: currentBreakDuration
+        )
+
+        startWorkTimer(forceFreshSession: true)
         isCompletingBreakSession = false
     }
     
@@ -2547,6 +2647,10 @@ extension AppDelegate: BreakOverlayDelegate {
     func didRequestPostpone(minutes: Int) {
         postponeBreak(minutes: minutes)
     }
+
+    func didRequestSkipBreak() {
+        skipBreakSession()
+    }
 }
 
 extension AppDelegate: NightRestrictionOverlayDelegate {
@@ -2621,6 +2725,17 @@ extension AppDelegate {
             overlay.updatePostponeStatus(used: usedMinutes, remaining: remainingMinutes)
         }
     }
+
+    private func updateBreakOverlaysSkipState() {
+        let state = breakSkipPolicy.state(
+            settings: breakSkipSettings,
+            breakStartTime: breakSessionStartTime,
+            now: Date()
+        )
+        for overlay in breakOverlays {
+            overlay.updateSkipState(state)
+        }
+    }
 }
 
 extension AppDelegate: NSMenuDelegate {
@@ -2629,6 +2744,8 @@ extension AppDelegate: NSMenuDelegate {
         updateMenuTimer()
         updateLoginItemState()
         updateShowCountdownState()
+        updateStrictModeMenuState()
+        updateSkipDelayMenuStates()
         updateTemporaryDisableMenuItem()
         updateModeMenuStates()
         rebuildNightRestrictionMenu()

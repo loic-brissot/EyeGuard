@@ -1,7 +1,7 @@
 ---
 id: TASK-2
 title: Add optional Skip button and configurable strictness to break overlay
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
 labels:
@@ -22,7 +22,7 @@ Allow users to skip an active break (button and keyboard shortcut) when needed, 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Break overlay displays a Skip action (button + Esc shortcut) when skipping is enabled
-- [ ] #2 Optional short button delay (e.g. 3s) or Strict Mode toggle prevents accidental skips
-- [ ] #3 Skipped breaks are recorded in local statistics and start a fresh work interval
+- [x] #1 Break overlay displays a Skip action (button + Esc shortcut) when skipping is enabled
+- [x] #2 Optional short button delay (e.g. 3s) or Strict Mode toggle prevents accidental skips
+- [x] #3 Skipped breaks are recorded in local statistics and start a fresh work interval
 <!-- AC:END -->

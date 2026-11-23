@@ -21,6 +21,11 @@
 "postpone1" = "Posponer 1 minuto (⌘1)";
 "postpone2" = "Posponer 2 minutos (⌘2)";
 "postpone5" = "Posponer 5 minutos (⌘5)";
+"skipBreak" = "Omitir (Esc)";
+"skipBreakCountdownFormat" = "Omitir (%ds)";
+"strictMode" = "Modo Estricto (Desactivar Omitir)";
+"skipDelay" = "Retraso para Omitir";
+"skipDelayNone" = "Ninguno (0 seg)";
 "postponed" = "Pospuesto";
 "postponeBreakCountdown" = "Descanso aplazado";
 "postpone_status" = "Pospuesto %d min, quedan %d min";

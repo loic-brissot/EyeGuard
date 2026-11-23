@@ -280,4 +280,31 @@ final class StatsEngineTests: XCTestCase {
         XCTAssertEqual(calendar.component(.month, from: snapshot.previousMonthStart), 3)
         XCTAssertEqual(calendar.component(.month, from: snapshot.nextMonthStart), 5)
     }
+
+    func testCountsSkippedBreaksWithoutFlaggingQualityIssues() {
+        let engine = StatsEngine(calendar: calendar, now: date("2026-04-26T18:00:00Z"))
+        let skippedBreak = StatsBreakRecord(
+            plannedDurationSeconds: 20,
+            actualDurationSeconds: 4,
+            startTime: date("2026-04-26T09:20:00Z"),
+            endTime: date("2026-04-26T09:20:04Z"),
+            status: .skipped
+        )
+
+        let snapshot = engine.dashboard(from: [
+            session(
+                id: 1,
+                start: "2026-04-26T09:00:00Z",
+                duration: 20 * 60,
+                breakRecord: skippedBreak,
+                breakCompleted: false
+            )
+        ])
+
+        XCTAssertEqual(snapshot.today.breakOpportunities, 1)
+        XCTAssertEqual(snapshot.today.completedBreaks, 0)
+        XCTAssertEqual(snapshot.today.skippedBreaks, 1)
+        XCTAssertEqual(snapshot.week.totalSkippedBreaks, 1)
+        XCTAssertFalse(snapshot.today.quality.hasIssues)
+    }
 }
