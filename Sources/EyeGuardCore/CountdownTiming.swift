@@ -44,21 +44,54 @@ public enum CountdownTiming {
         overrideUntil: Date?,
         showStatusCountdown: Bool,
         menuIsOpen: Bool,
-        displaysAreActive: Bool
+        displaysAreActive: Bool,
+        preBreakLeadTimeSeconds: Int = 0
     ) -> CountdownPlan {
         let deadline = [phase.deadline, nightTransition, overrideUntil].compactMap { $0 }.min()
         return CountdownPlan(
             deadline: deadline.map { max(now, $0) },
             display: displaysAreActive ? nextDisplay(now: now, phase: phase, overrideUntil: overrideUntil,
-                                                    showStatusCountdown: showStatusCountdown, menuIsOpen: menuIsOpen) : nil
+                                                    showStatusCountdown: showStatusCountdown, menuIsOpen: menuIsOpen,
+                                                    preBreakLeadTimeSeconds: max(0, preBreakLeadTimeSeconds)) : nil
         )
     }
 
     private static func nextDisplay(now: Date, phase: CountdownPhase, overrideUntil: Date?,
-                                    showStatusCountdown: Bool, menuIsOpen: Bool) -> Date? {
+                                    showStatusCountdown: Bool, menuIsOpen: Bool,
+                                    preBreakLeadTimeSeconds: Int) -> Date? {
         if let overrideUntil, overrideUntil > now {
             return nextChange(until: overrideUntil, now: now, unit: 1)
         }
+        if let headsUpDisplay = preBreakDisplay(now: now, phase: phase, leadTimeSeconds: preBreakLeadTimeSeconds) {
+            let baseDisplay = regularDisplay(now: now, phase: phase, showStatusCountdown: showStatusCountdown, menuIsOpen: menuIsOpen)
+            if let baseDisplay {
+                return min(baseDisplay, headsUpDisplay)
+            }
+            return headsUpDisplay
+        }
+        return regularDisplay(now: now, phase: phase, showStatusCountdown: showStatusCountdown, menuIsOpen: menuIsOpen)
+    }
+
+    private static func preBreakDisplay(now: Date, phase: CountdownPhase, leadTimeSeconds: Int) -> Date? {
+        guard leadTimeSeconds > 0 else { return nil }
+        let until: Date
+        switch phase {
+        case .work(let date), .postponed(let date):
+            until = date
+        case .rest, .temporarilyDisabled, .nightLocked, .paused:
+            return nil
+        }
+        let remaining = until.timeIntervalSince(now)
+        guard remaining > 0 else { return nil }
+        let leadTime = TimeInterval(leadTimeSeconds)
+        if remaining <= leadTime {
+            return nextChange(until: until, now: now, unit: 1)
+        }
+        return until.addingTimeInterval(-leadTime)
+    }
+
+    private static func regularDisplay(now: Date, phase: CountdownPhase,
+                                       showStatusCountdown: Bool, menuIsOpen: Bool) -> Date? {
         if menuIsOpen {
             return phase.deadline.flatMap { nextChange(until: $0, now: now, unit: 1) }
                 ?? Date(timeIntervalSinceReferenceDate: floor(now.timeIntervalSinceReferenceDate) + 1)

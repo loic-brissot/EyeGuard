@@ -139,3 +139,12 @@
 "verdictHealthyReason" = "La finalización de descansos está en objetivo y el trabajo continuo no es demasiado largo";
 "verdictAttentionTitle" = "Requiere Atención";
 "verdictAttentionReason" = "Hay datos hoy, pero aún no bastan para considerarlo un ritmo saludable";
+"preBreakHeadsUp" = "Aviso previo al descanso";
+"preBreakOff" = "Desactivado";
+"preBreakSeconds10" = "10 s";
+"preBreakSeconds20" = "20 s";
+"preBreakSeconds30" = "30 s";
+"preBreakCountdownFormat" = "Descanso en %d s";
+"preBreakSnooze1" = "+1m";
+"preBreakSnooze5" = "+5m";
+"preBreakSkip" = "Omitir";

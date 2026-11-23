@@ -139,3 +139,12 @@
 "verdictHealthyReason" = "休憩完了率は基準内で、連続作業も明らかに長すぎません";
 "verdictAttentionTitle" = "注意が必要";
 "verdictAttentionReason" = "今日は記録がありますが、健康的なリズムと判断するにはまだ不十分です";
+"preBreakHeadsUp" = "休憩前の事前通知";
+"preBreakOff" = "オフ";
+"preBreakSeconds10" = "10秒";
+"preBreakSeconds20" = "20秒";
+"preBreakSeconds30" = "30秒";
+"preBreakCountdownFormat" = "%d秒後に休憩";
+"preBreakSnooze1" = "+1分";
+"preBreakSnooze5" = "+5分";
+"preBreakSkip" = "スキップ";
