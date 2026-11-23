@@ -7,8 +7,20 @@
     "email": "javen.out@gmail.com",
     "github": "JavenGroup/TwentyGuard"
   },
-  "current_version": "0.0.0",
+  "current_version": "2.0.0",
   "versions": [
+    {
+      "version": "2.0.0",
+      "date": "2026-11-23",
+      "changes": [
+        "Added meeting and call auto-pause via CoreAudio microphone activity detection with an app exclusion list",
+        "Added wait-for-typing and mouse-dragging break deferral with configurable bounded max wait threshold",
+        "Added fullscreen active and user-configurable Deep Focus app auto-pause rules",
+        "Added screen recording and screen sharing auto-pause detection with graceful permission fallback",
+        "Added Apple Calendar (EventKit) busy-event auto-pause with calendar selection and postpone/skip options",
+        "Added idle pause and natural break detection that respects fullscreen/video rules"
+      ]
+    },
     {
       "version": "0.0.0",
       "date": "2026-11-23",
