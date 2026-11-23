@@ -178,3 +178,15 @@
 "smartPauseMenuWaitingInput" = "대기 중: 입력 또는 드래그 중";
 "smartPauseMenuWaitingTyping" = "대기 중: 키보드 입력 중";
 "smartPauseMenuWaitingDragging" = "대기 중: 마우스 드래그 중";
+"smartPauseFullscreenEnabled" = "전체 화면 앱에서 일시 정지";
+"smartPauseDeepFocusApps" = "집중 모드 앱";
+"smartPauseNoDeepFocusApps" = "집중 모드 앱 없음";
+"smartPauseDeepFocusModeFrontmost" = "전면 실행 중일 때";
+"smartPauseDeepFocusModeOpen" = "실행 중일 때";
+"smartPauseDeepFocusRemove" = "제거";
+"smartPauseAddDeepFocusTitle" = "집중 모드 앱 추가";
+"smartPauseAddDeepFocusMessage" = "앱 이름(예: Xcode) 또는 번들 식별자(예: com.apple.dt.Xcode)를 입력하세요:";
+"smartPauseMenuFullscreen" = "일시 정지됨: 전체 화면 앱";
+"smartPauseMenuFullscreenFormat" = "일시 정지됨: 전체 화면 앱 (%@)";
+"smartPauseMenuDeepFocus" = "일시 정지됨: 집중 모드";
+"smartPauseMenuDeepFocusFormat" = "일시 정지됨: 집중 모드 (%@)";

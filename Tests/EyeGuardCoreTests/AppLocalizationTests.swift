@@ -145,7 +145,19 @@ final class AppLocalizationTests: XCTestCase {
             "smartPauseWaitingStatusBar",
             "smartPauseMenuWaitingInput",
             "smartPauseMenuWaitingTyping",
-            "smartPauseMenuWaitingDragging"
+            "smartPauseMenuWaitingDragging",
+            "smartPauseFullscreenEnabled",
+            "smartPauseDeepFocusApps",
+            "smartPauseNoDeepFocusApps",
+            "smartPauseDeepFocusModeFrontmost",
+            "smartPauseDeepFocusModeOpen",
+            "smartPauseDeepFocusRemove",
+            "smartPauseAddDeepFocusTitle",
+            "smartPauseAddDeepFocusMessage",
+            "smartPauseMenuFullscreen",
+            "smartPauseMenuFullscreenFormat",
+            "smartPauseMenuDeepFocus",
+            "smartPauseMenuDeepFocusFormat"
         ]
 
         for language in AppLocalization.supportedLanguageCodes {

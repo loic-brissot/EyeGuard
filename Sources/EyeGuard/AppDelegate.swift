@@ -34,6 +34,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private enum SmartPauseDefaults {
         static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
         static let meetingExcludedApps = "smartPauseMeetingExcludedApps"
+        static let fullscreenPauseEnabled = "smartPauseFullscreenEnabled"
+        static let deepFocusApps = "smartPauseDeepFocusApps"
         static let waitForInputEnabled = "smartPauseWaitForInputEnabled"
         static let waitForInputMaxSeconds = "smartPauseWaitForInputMaxSeconds"
     }
@@ -119,9 +121,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var temporaryDisableState: TemporaryDisableState?
 
     // Smart Pause settings & runtime state
-    private let meetingAutoPausePolicy = MeetingAutoPausePolicy()
+    private let smartPausePolicy = SmartPausePolicy()
     private var meetingAutoPauseSettings = MeetingAutoPauseSettings()
+    private var focusAppPauseSettings = FocusAppPauseSettings()
     private lazy var meetingCallMonitor = MeetingCallMonitor()
+    private lazy var focusAppMonitor = FocusAppMonitor()
     private var smartPauseEvaluation: SmartPauseEvaluation = .activeNone
     private var smartPauseSnapshot: SmartPauseSnapshot?
     private var smartPauseMenuItem: NSMenuItem!
@@ -215,10 +219,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBar()
         setupMenu()
         setupSystemNotifications()
-        meetingCallMonitor.onUpdate = { [weak self] snapshot in
-            self?.handleMeetingCallMonitorUpdate(snapshot)
+        meetingCallMonitor.onUpdate = { [weak self] _ in
+            self?.evaluateSmartPause()
+        }
+        focusAppMonitor.onUpdate = { [weak self] _ in
+            self?.evaluateSmartPause()
         }
         meetingCallMonitor.start()
+        focusAppMonitor.start()
         schedulingReady = true
         
         // 记录应用启动
@@ -605,6 +613,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
         meetingCallMonitor.stop()
+        focusAppMonitor.stop()
         cancelInputDeferral()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays { overlay.hideOverlay() }
@@ -675,6 +684,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         meetingAutoPauseSettings.excludedApps = UserDefaults.standard.stringArray(forKey: SmartPauseDefaults.meetingExcludedApps) ?? []
 
+        if UserDefaults.standard.object(forKey: SmartPauseDefaults.fullscreenPauseEnabled) != nil {
+            focusAppPauseSettings.fullscreenPauseEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.fullscreenPauseEnabled)
+        } else {
+            focusAppPauseSettings.fullscreenPauseEnabled = true
+        }
+        if let deepFocusData = UserDefaults.standard.data(forKey: SmartPauseDefaults.deepFocusApps),
+           let decodedRules = try? JSONDecoder().decode([DeepFocusAppRule].self, from: deepFocusData) {
+            focusAppPauseSettings.deepFocusApps = decodedRules
+        } else {
+            focusAppPauseSettings.deepFocusApps = []
+        }
+
         let waitForInputEnabled: Bool
         if UserDefaults.standard.object(forKey: SmartPauseDefaults.waitForInputEnabled) != nil {
             waitForInputEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.waitForInputEnabled)
@@ -719,6 +740,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(nightRestrictionSettings.unlockTime.minutesAfterMidnight, forKey: "nightUnlockMinutes")
         UserDefaults.standard.set(meetingAutoPauseSettings.isEnabled, forKey: SmartPauseDefaults.meetingAutoPauseEnabled)
         UserDefaults.standard.set(meetingAutoPauseSettings.excludedApps, forKey: SmartPauseDefaults.meetingExcludedApps)
+        UserDefaults.standard.set(focusAppPauseSettings.fullscreenPauseEnabled, forKey: SmartPauseDefaults.fullscreenPauseEnabled)
+        if let encodedDeepFocus = try? JSONEncoder().encode(focusAppPauseSettings.deepFocusApps) {
+            UserDefaults.standard.set(encodedDeepFocus, forKey: SmartPauseDefaults.deepFocusApps)
+        }
         UserDefaults.standard.set(inputDeferralSettings.isEnabled, forKey: SmartPauseDefaults.waitForInputEnabled)
         UserDefaults.standard.set(Int(inputDeferralSettings.maxWaitThreshold), forKey: SmartPauseDefaults.waitForInputMaxSeconds)
 
@@ -740,6 +765,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "night_unlock_time": nightRestrictionSettings.unlockTime.displayString,
             "smart_pause_meeting_enabled": "\(meetingAutoPauseSettings.isEnabled)",
             "smart_pause_excluded_count": "\(meetingAutoPauseSettings.excludedApps.count)",
+            "smart_pause_fullscreen_enabled": "\(focusAppPauseSettings.fullscreenPauseEnabled)",
+            "smart_pause_deep_focus_count": "\(focusAppPauseSettings.deepFocusApps.count)",
             "smart_pause_wait_for_input_enabled": "\(inputDeferralSettings.isEnabled)",
             "smart_pause_wait_for_input_max_seconds": "\(Int(inputDeferralSettings.maxWaitThreshold))"
         ]
@@ -1648,6 +1675,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
         meetingCallMonitor.stop()
+        focusAppMonitor.stop()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays {
             overlay.hideOverlay()
@@ -3123,6 +3151,15 @@ extension AppDelegate {
         meetingEnabledItem.state = meetingAutoPauseSettings.isEnabled ? .on : .off
         submenu.addItem(meetingEnabledItem)
 
+        let fullscreenEnabledItem = NSMenuItem(
+            title: localized("smartPauseFullscreenEnabled"),
+            action: #selector(toggleFullscreenPause),
+            keyEquivalent: ""
+        )
+        fullscreenEnabledItem.target = self
+        fullscreenEnabledItem.state = focusAppPauseSettings.fullscreenPauseEnabled ? .on : .off
+        submenu.addItem(fullscreenEnabledItem)
+
         let waitForInputItem = NSMenuItem(
             title: localized("smartPauseWaitForInputEnabled"),
             action: #selector(toggleWaitForInput),
@@ -3149,6 +3186,14 @@ extension AppDelegate {
         )
         excludedAppsItem.submenu = buildExcludedAppsSubmenu()
         submenu.addItem(excludedAppsItem)
+
+        let deepFocusAppsItem = NSMenuItem(
+            title: localized("smartPauseDeepFocusApps"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        deepFocusAppsItem.submenu = buildDeepFocusAppsSubmenu()
+        submenu.addItem(deepFocusAppsItem)
 
         return submenu
     }
@@ -3244,6 +3289,132 @@ extension AppDelegate {
         return submenu
     }
 
+    private func buildDeepFocusAppsSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+
+        if focusAppPauseSettings.deepFocusApps.isEmpty {
+            submenu.addItem(disabledMenuItem(localized("smartPauseNoDeepFocusApps")))
+        } else {
+            for rule in focusAppPauseSettings.deepFocusApps {
+                let modeLabel = localized(
+                    rule.triggerMode == .whenFrontmost
+                        ? "smartPauseDeepFocusModeFrontmost"
+                        : "smartPauseDeepFocusModeOpen"
+                )
+                let item = NSMenuItem(
+                    title: "\(rule.effectiveDisplayName) (\(modeLabel))",
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                item.state = .on
+                let ruleSubmenu = NSMenu()
+
+                let frontmostModeItem = NSMenuItem(
+                    title: localized("smartPauseDeepFocusModeFrontmost"),
+                    action: #selector(setDeepFocusModeFrontmost(_:)),
+                    keyEquivalent: ""
+                )
+                frontmostModeItem.target = self
+                frontmostModeItem.representedObject = rule.identifier
+                frontmostModeItem.state = rule.triggerMode == .whenFrontmost ? .on : .off
+                ruleSubmenu.addItem(frontmostModeItem)
+
+                let openModeItem = NSMenuItem(
+                    title: localized("smartPauseDeepFocusModeOpen"),
+                    action: #selector(setDeepFocusModeOpen(_:)),
+                    keyEquivalent: ""
+                )
+                openModeItem.target = self
+                openModeItem.representedObject = rule.identifier
+                openModeItem.state = rule.triggerMode == .whenOpen ? .on : .off
+                ruleSubmenu.addItem(openModeItem)
+
+                ruleSubmenu.addItem(NSMenuItem.separator())
+
+                let removeItem = NSMenuItem(
+                    title: localized("smartPauseDeepFocusRemove"),
+                    action: #selector(removeDeepFocusApp(_:)),
+                    keyEquivalent: ""
+                )
+                removeItem.target = self
+                removeItem.representedObject = rule.identifier
+                ruleSubmenu.addItem(removeItem)
+
+                item.submenu = ruleSubmenu
+                submenu.addItem(item)
+            }
+        }
+
+        submenu.addItem(NSMenuItem.separator())
+
+        let selfBundleID = MeetingAutoPausePolicy.normalizedIdentifier(Bundle.main.bundleIdentifier ?? AppIdentity.bundleIdentifier)
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           frontmost.activationPolicy != .prohibited {
+            let frontBundle = frontmost.bundleIdentifier ?? ""
+            let frontName = frontmost.localizedName ?? frontBundle
+            let frontInfo = RunningAppInfo(bundleIdentifier: frontBundle, localizedName: frontName, isFrontmost: true)
+            let isSelf = MeetingAutoPausePolicy.normalizedIdentifier(frontBundle) == selfBundleID
+            if !isSelf,
+               !frontName.isEmpty,
+               !FocusAppPauseSettings.containsApp(frontInfo, in: focusAppPauseSettings.deepFocusApps) {
+                let identifierToAdd = frontBundle.isEmpty ? frontName : frontBundle
+                let title = String(format: localized("smartPauseAddFrontmostFormat"), frontName)
+                let addFrontmostItem = NSMenuItem(
+                    title: title,
+                    action: #selector(addDeepFocusAppFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                addFrontmostItem.target = self
+                addFrontmostItem.representedObject = [identifierToAdd, frontName]
+                submenu.addItem(addFrontmostItem)
+            }
+        }
+
+        let runningAppsItem = NSMenuItem(
+            title: localized("smartPauseAddRunningApp"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        let runningSubmenu = NSMenu()
+        let candidateApps = MeetingCallMonitor.collectRunningApps()
+            .filter { app in
+                let normalizedBundle = MeetingAutoPausePolicy.normalizedIdentifier(app.bundleIdentifier)
+                return normalizedBundle != selfBundleID &&
+                    !FocusAppPauseSettings.containsApp(app, in: focusAppPauseSettings.deepFocusApps) &&
+                    !app.localizedName.isEmpty
+            }
+            .sorted { $0.localizedName.localizedCaseInsensitiveCompare($1.localizedName) == .orderedAscending }
+
+        if candidateApps.isEmpty {
+            runningSubmenu.addItem(disabledMenuItem(localized("smartPauseNoRunningApps")))
+        } else {
+            for app in candidateApps {
+                let identifierToAdd = app.bundleIdentifier.isEmpty ? app.localizedName : app.bundleIdentifier
+                let title = app.bundleIdentifier.isEmpty ? app.localizedName : "\(app.localizedName) (\(app.bundleIdentifier))"
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(addDeepFocusAppFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = [identifierToAdd, app.localizedName]
+                runningSubmenu.addItem(item)
+            }
+        }
+        runningAppsItem.submenu = runningSubmenu
+        submenu.addItem(runningAppsItem)
+
+        let addCustomItem = NSMenuItem(
+            title: localized("smartPauseAddCustomApp"),
+            action: #selector(promptAddCustomDeepFocusApp),
+            keyEquivalent: ""
+        )
+        addCustomItem.target = self
+        submenu.addItem(addCustomItem)
+
+        return submenu
+    }
+
     private func buildMaxWaitThresholdSubmenu() -> NSMenu {
         let submenu = NSMenu()
         let currentSeconds = Int(inputDeferralSettings.maxWaitThreshold)
@@ -3275,7 +3446,14 @@ extension AppDelegate {
         meetingAutoPauseSettings.isEnabled.toggle()
         saveSettings()
         rebuildSmartPauseMenu()
-        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func toggleFullscreenPause() {
+        focusAppPauseSettings.fullscreenPauseEnabled.toggle()
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
     }
 
     @objc private func toggleWaitForInput() {
@@ -3305,7 +3483,7 @@ extension AppDelegate {
         )
         saveSettings()
         rebuildSmartPauseMenu()
-        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+        evaluateSmartPause(refreshSnapshots: true)
     }
 
     @objc private func removeExcludedApp(_ sender: NSMenuItem) {
@@ -3316,7 +3494,7 @@ extension AppDelegate {
         )
         saveSettings()
         rebuildSmartPauseMenu()
-        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+        evaluateSmartPause(refreshSnapshots: true)
     }
 
     @objc private func promptAddCustomExcludedApp() {
@@ -3344,7 +3522,99 @@ extension AppDelegate {
         )
         saveSettings()
         rebuildSmartPauseMenu()
-        handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func addDeepFocusAppFromMenu(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? [String], let identifier = payload.first else { return }
+        let displayName = payload.count > 1 ? payload[1] : nil
+        let rule = DeepFocusAppRule(
+            identifier: identifier,
+            displayName: displayName,
+            triggerMode: .whenFrontmost
+        )
+        focusAppPauseSettings.deepFocusApps = FocusAppPauseSettings.addingRule(
+            rule,
+            to: focusAppPauseSettings.deepFocusApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func setDeepFocusModeFrontmost(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        focusAppPauseSettings.deepFocusApps = FocusAppPauseSettings.updatingTriggerMode(
+            .whenFrontmost,
+            for: identifier,
+            in: focusAppPauseSettings.deepFocusApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func setDeepFocusModeOpen(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        focusAppPauseSettings.deepFocusApps = FocusAppPauseSettings.updatingTriggerMode(
+            .whenOpen,
+            for: identifier,
+            in: focusAppPauseSettings.deepFocusApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func removeDeepFocusApp(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        focusAppPauseSettings.deepFocusApps = FocusAppPauseSettings.removingRule(
+            identifier: identifier,
+            from: focusAppPauseSettings.deepFocusApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func promptAddCustomDeepFocusApp() {
+        let alert = NSAlert()
+        alert.messageText = localized("smartPauseAddDeepFocusTitle")
+        alert.informativeText = localized("smartPauseAddDeepFocusMessage")
+        alert.addButton(withTitle: localized("smartPauseAdd"))
+        alert.addButton(withTitle: localized("nightOverrideCancel"))
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 58))
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 34, width: 280, height: 24))
+        inputField.placeholderString = localized("smartPauseAddAppPlaceholder")
+
+        let modePopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 280, height: 26), pullsDown: false)
+        modePopup.addItems(withTitles: [
+            localized("smartPauseDeepFocusModeFrontmost"),
+            localized("smartPauseDeepFocusModeOpen")
+        ])
+
+        container.addSubview(inputField)
+        container.addSubview(modePopup)
+        alert.accessoryView = container
+        alert.window.initialFirstResponder = inputField
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let value = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+
+        let mode: DeepFocusTriggerMode = modePopup.indexOfSelectedItem == 1 ? .whenOpen : .whenFrontmost
+        let rule = DeepFocusAppRule(identifier: value, triggerMode: mode)
+        focusAppPauseSettings.deepFocusApps = FocusAppPauseSettings.addingRule(
+            rule,
+            to: focusAppPauseSettings.deepFocusApps
+        )
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
     }
 
     private func smartPauseMenuStatusText() -> String {
@@ -3357,6 +3627,16 @@ extension AppDelegate {
                 return String(format: localized("smartPauseMenuMeetingFormat"), appName)
             }
             return localized("smartPauseMenuMeeting")
+        case .fullscreenApp(let appName):
+            if let appName, !appName.isEmpty {
+                return String(format: localized("smartPauseMenuFullscreenFormat"), appName)
+            }
+            return localized("smartPauseMenuFullscreen")
+        case .deepFocusApp(let appName):
+            if let appName, !appName.isEmpty {
+                return String(format: localized("smartPauseMenuDeepFocusFormat"), appName)
+            }
+            return localized("smartPauseMenuDeepFocus")
         case .typingOrDragging:
             return inputDeferralMenuStatusText()
         }
@@ -3429,11 +3709,16 @@ extension AppDelegate {
         inputDeferralReason = nil
     }
 
-    private func handleMeetingCallMonitorUpdate(_ snapshot: MeetingCallMonitor.Snapshot) {
-        let nextEvaluation = meetingAutoPausePolicy.evaluate(
-            settings: meetingAutoPauseSettings,
-            isAudioInputActive: snapshot.isAudioInputActive,
-            runningApps: snapshot.runningApps
+    private func evaluateSmartPause(refreshSnapshots: Bool = false) {
+        let meetingSnapshot = refreshSnapshots ? meetingCallMonitor.currentSnapshot() : meetingCallMonitor.lastSnapshot
+        let focusSnapshot = refreshSnapshots ? focusAppMonitor.currentSnapshot() : focusAppMonitor.lastSnapshot
+        let runningApps = focusSnapshot.runningApps.isEmpty ? meetingSnapshot.runningApps : focusSnapshot.runningApps
+        let nextEvaluation = smartPausePolicy.evaluate(
+            meetingSettings: meetingAutoPauseSettings,
+            focusAppSettings: focusAppPauseSettings,
+            isAudioInputActive: meetingSnapshot.isAudioInputActive,
+            isFrontmostFullscreen: focusSnapshot.isFrontmostFullscreen,
+            runningApps: runningApps
         )
         applySmartPauseEvaluation(nextEvaluation)
     }

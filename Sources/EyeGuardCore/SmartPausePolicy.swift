@@ -3,7 +3,17 @@ import Foundation
 /// Extensible reason describing why Smart Pause is currently holding break transitions.
 public enum SmartPauseReason: Equatable, Sendable {
     case meetingOrCall(appName: String?)
+    case fullscreenApp(appName: String?)
+    case deepFocusApp(appName: String?)
     case typingOrDragging
+
+    /// Indicates whether the active pause reason is a fullscreen or video experience (used by TASK-9 soft-break handling).
+    public var isFullscreenOrVideo: Bool {
+        if case .fullscreenApp = self {
+            return true
+        }
+        return false
+    }
 }
 
 /// Lightweight, platform-independent snapshot of a running application for Smart Pause evaluation.
@@ -55,6 +65,49 @@ public struct SmartPauseEvaluation: Equatable, Sendable {
         matchedAppName: nil,
         matchedBundleID: nil
     )
+
+    /// Indicates whether fullscreen/video Smart Pause is currently active.
+    public var isFullscreenOrVideoActive: Bool {
+        isPaused && (reason?.isFullscreenOrVideo ?? false)
+    }
+}
+
+/// Unified Smart Pause policy evaluating all active auto-pause rules in deterministic precedence:
+/// 1. Active meeting/call (audio input + meeting app rules)
+/// 2. Fullscreen active app (if enabled)
+/// 3. Deep Focus app (frontmost, then open background `.whenOpen`)
+public struct SmartPausePolicy: Sendable {
+    private let meetingPolicy = MeetingAutoPausePolicy()
+    private let focusAppPolicy = FocusAppPausePolicy()
+
+    public init() {}
+
+    public func evaluate(
+        meetingSettings: MeetingAutoPauseSettings,
+        focusAppSettings: FocusAppPauseSettings,
+        isAudioInputActive: Bool,
+        isFrontmostFullscreen: Bool,
+        runningApps: [RunningAppInfo]
+    ) -> SmartPauseEvaluation {
+        let meetingEvaluation = meetingPolicy.evaluate(
+            settings: meetingSettings,
+            isAudioInputActive: isAudioInputActive,
+            runningApps: runningApps
+        )
+        if meetingEvaluation.isPaused {
+            return meetingEvaluation
+        }
+
+        let focusSnapshot = FocusAppSnapshot(
+            isFrontmostFullscreen: isFrontmostFullscreen,
+            frontmostApp: runningApps.first(where: { $0.isFrontmost }),
+            runningApps: runningApps
+        )
+        return focusAppPolicy.evaluate(
+            settings: focusAppSettings,
+            snapshot: focusSnapshot
+        )
+    }
 }
 
 /// Pure, deterministic policy for automatically pausing breaks during active meetings/calls.
