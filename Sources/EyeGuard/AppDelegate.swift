@@ -34,6 +34,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private enum SmartPauseDefaults {
         static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
         static let meetingExcludedApps = "smartPauseMeetingExcludedApps"
+        static let waitForInputEnabled = "smartPauseWaitForInputEnabled"
+        static let waitForInputMaxSeconds = "smartPauseWaitForInputMaxSeconds"
     }
 
     private struct SmartPauseSnapshot {
@@ -123,6 +125,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var smartPauseEvaluation: SmartPauseEvaluation = .activeNone
     private var smartPauseSnapshot: SmartPauseSnapshot?
     private var smartPauseMenuItem: NSMenuItem!
+    private let inputDeferralPolicy = InputActivityDeferralPolicy()
+    private var inputDeferralSettings = InputDeferralSettings()
+    private var inputActivityProvider: InputActivityProviding = SystemInputActivityMonitor()
+    private var inputDeferralStartedAt: Date?
+    private var inputDeferralReason: InputDeferralReason?
+    private var inputDeferralTimer: Timer?
     
     // Language settings
     private var currentLanguage: String = ""
@@ -183,6 +191,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var isSmartPaused: Bool {
         smartPauseEvaluation.isPaused && !currentNightStatus().isLocked && !isTemporaryDisableActive
+    }
+
+    private var isWaitingForInputDeferral: Bool {
+        inputDeferralStartedAt != nil && !currentNightStatus().isLocked && !isTemporaryDisableActive && !isSmartPaused
     }
     
     // MARK: - Localization
@@ -593,6 +605,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
         meetingCallMonitor.stop()
+        cancelInputDeferral()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays { overlay.hideOverlay() }
         nightLockOverlays.removeAll()
@@ -662,6 +675,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         meetingAutoPauseSettings.excludedApps = UserDefaults.standard.stringArray(forKey: SmartPauseDefaults.meetingExcludedApps) ?? []
 
+        let waitForInputEnabled: Bool
+        if UserDefaults.standard.object(forKey: SmartPauseDefaults.waitForInputEnabled) != nil {
+            waitForInputEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.waitForInputEnabled)
+        } else {
+            waitForInputEnabled = true
+        }
+        let savedMaxWaitSeconds = UserDefaults.standard.object(forKey: SmartPauseDefaults.waitForInputMaxSeconds) as? Int
+        let validatedMaxWait = InputDeferralSettings.validatedMaxWaitSeconds(
+            savedMaxWaitSeconds ?? Int(InputDeferralSettings.defaultMaxWaitThreshold)
+        )
+        inputDeferralSettings = InputDeferralSettings(
+            isEnabled: waitForInputEnabled,
+            idleGraceWindow: InputDeferralSettings.defaultIdleGraceWindow,
+            maxWaitThreshold: TimeInterval(validatedMaxWait)
+        )
+
         // Apply the loaded settings
         if isCustomMode {
             currentWorkDuration = customWorkDuration
@@ -690,6 +719,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(nightRestrictionSettings.unlockTime.minutesAfterMidnight, forKey: "nightUnlockMinutes")
         UserDefaults.standard.set(meetingAutoPauseSettings.isEnabled, forKey: SmartPauseDefaults.meetingAutoPauseEnabled)
         UserDefaults.standard.set(meetingAutoPauseSettings.excludedApps, forKey: SmartPauseDefaults.meetingExcludedApps)
+        UserDefaults.standard.set(inputDeferralSettings.isEnabled, forKey: SmartPauseDefaults.waitForInputEnabled)
+        UserDefaults.standard.set(Int(inputDeferralSettings.maxWaitThreshold), forKey: SmartPauseDefaults.waitForInputMaxSeconds)
 
         // 记录设置变更
         let changes: [String: String] = [
@@ -708,7 +739,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "night_lock_start": nightRestrictionSettings.lockStart.displayString,
             "night_unlock_time": nightRestrictionSettings.unlockTime.displayString,
             "smart_pause_meeting_enabled": "\(meetingAutoPauseSettings.isEnabled)",
-            "smart_pause_excluded_count": "\(meetingAutoPauseSettings.excludedApps.count)"
+            "smart_pause_excluded_count": "\(meetingAutoPauseSettings.excludedApps.count)",
+            "smart_pause_wait_for_input_enabled": "\(inputDeferralSettings.isEnabled)",
+            "smart_pause_wait_for_input_max_seconds": "\(Int(inputDeferralSettings.maxWaitThreshold))"
         ]
         eventRecorder.recordSettingsChange(changes: changes)
     }
@@ -1323,7 +1356,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         eventRecorder.endWorkSession()
 
         countdownScheduler.cancel()
-        showBreakOverlay()
+        cancelInputDeferral()
+        showBreakOverlay(bypassInputDeferral: true)
     }
     
     @objc private func showHealthStats() {
@@ -1716,6 +1750,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func restartWorkTimer() {
         guard displaysAreActive else { rescheduleCountdown(); return }
+        cancelInputDeferral()
         if applyNightRestrictionState(reason: "restart_work_timer") {
             rescheduleCountdown()
             return
@@ -1754,6 +1789,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if forceFreshSession {
+            cancelInputDeferral()
             let now = Date()
             let hadPostponeState = postponeStartTime != nil || postponeDuration > 0 || totalPostponedTime > 0
             let nextState = SessionState(
@@ -1864,6 +1900,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             title = " " + localized("temporaryDisableActiveStatus") + " " + formatStatusBarTime(temporaryDisableRemainingSeconds)
         } else if isSmartPaused {
             title = " " + localized("smartPauseStatusBar")
+        } else if isWaitingForInputDeferral {
+            title = " " + localized("smartPauseWaitingStatusBar")
         } else if showCountdownInStatusBar {
             if let start = postponeStartTime {
                 title = " " + formatStatusBarTime(CountdownTiming.secondsRemaining(until: start.addingTimeInterval(postponeDuration), now: now))
@@ -2043,6 +2081,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         print("🌙 进入夜间禁用：\(reason)")
+        cancelInputDeferral()
         dismissPreBreakHUD()
         closeHealthStatsWindowIfNeeded()
         cleanupBreakOverlays()
@@ -2180,6 +2219,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             timerMenuItem.title = "\(localized("temporaryDisableActiveStatus")) · \(formatStatusBarTime(temporaryDisableRemainingSeconds))"
         } else if isSmartPaused {
             timerMenuItem.title = smartPauseMenuStatusText()
+        } else if isWaitingForInputDeferral {
+            timerMenuItem.title = inputDeferralMenuStatusText()
         } else if isPostponeActive {
             // 推迟期间显示推迟倒计时
             let totalSeconds = Int(postponeTimeRemaining)
@@ -2247,6 +2288,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         eventRecorder.recordTemporaryDisableStarted(state: state, reason: reason)
 
         countdownScheduler.cancel()
+        cancelInputDeferral()
         dismissPreBreakHUD()
         smartPauseSnapshot = nil
 
@@ -2355,16 +2397,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         traceCountdownTiming(event: "snapshot")
     }
     
-    private func showBreakOverlay() {
+    private func showBreakOverlay(bypassInputDeferral: Bool = false) {
         print("🎭 showBreakOverlay 被调用")
         dismissPreBreakHUD()
 
         if applyNightRestrictionState(reason: "before_break_overlay") {
+            cancelInputDeferral()
             rescheduleCountdown()
             return
         }
 
         if isSmartPaused {
+            cancelInputDeferral()
             if smartPauseSnapshot == nil {
                 smartPauseSnapshot = SmartPauseSnapshot(
                     remainingWorkTime: nil,
@@ -2382,6 +2426,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             rescheduleCountdown()
             return
         }
+
+        if !bypassInputDeferral, shouldDeferBreakForInputActivity() {
+            return
+        }
+
+        cancelInputDeferral()
 
         closeHealthStatsWindowIfNeeded()
 
@@ -2673,6 +2723,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func pauseCurrentSession(reason: String) {
         displaysAreActive = false
         smartPauseSnapshot = nil
+        cancelInputDeferral()
+        inputActivityProvider.resetTracking()
         countdownScheduler.cancel()
         dismissPreBreakHUD()
         logSessionDebug("system_pause_current_session", context: [
@@ -3011,6 +3063,7 @@ extension AppDelegate: PreBreakHUDDelegate {
         }
 
         dismissPreBreakHUD()
+        cancelInputDeferral()
 
         let postponeSeconds = TimeInterval(minutes * 60)
         totalPostponedTime += postponeSeconds
@@ -3037,6 +3090,7 @@ extension AppDelegate: PreBreakHUDDelegate {
     func didRequestPreBreakSkip() {
         _ = preBreakPolicy.skip()
         dismissPreBreakHUD()
+        cancelInputDeferral()
         logManager.logEvent(.breakSkipped, context: ["reason": "pre_break_skip"])
         restartWorkTimer()
     }
@@ -3068,6 +3122,23 @@ extension AppDelegate {
         meetingEnabledItem.target = self
         meetingEnabledItem.state = meetingAutoPauseSettings.isEnabled ? .on : .off
         submenu.addItem(meetingEnabledItem)
+
+        let waitForInputItem = NSMenuItem(
+            title: localized("smartPauseWaitForInputEnabled"),
+            action: #selector(toggleWaitForInput),
+            keyEquivalent: ""
+        )
+        waitForInputItem.target = self
+        waitForInputItem.state = inputDeferralSettings.isEnabled ? .on : .off
+        submenu.addItem(waitForInputItem)
+
+        let maxWaitItem = NSMenuItem(
+            title: localized("smartPauseMaxWait"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        maxWaitItem.submenu = buildMaxWaitThresholdSubmenu()
+        submenu.addItem(maxWaitItem)
 
         submenu.addItem(NSMenuItem.separator())
 
@@ -3173,11 +3244,57 @@ extension AppDelegate {
         return submenu
     }
 
+    private func buildMaxWaitThresholdSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let currentSeconds = Int(inputDeferralSettings.maxWaitThreshold)
+        for seconds in InputDeferralSettings.supportedMaxWaitThresholds {
+            let key: String
+            switch seconds {
+            case 30:
+                key = "smartPauseMaxWait30"
+            case 120:
+                key = "smartPauseMaxWait120"
+            default:
+                key = "smartPauseMaxWait60"
+            }
+            let item = NSMenuItem(
+                title: localized(key),
+                action: #selector(selectMaxWaitThreshold(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = seconds
+            item.state = currentSeconds == seconds ? .on : .off
+            item.isEnabled = inputDeferralSettings.isEnabled
+            submenu.addItem(item)
+        }
+        return submenu
+    }
+
     @objc private func toggleMeetingAutoPause() {
         meetingAutoPauseSettings.isEnabled.toggle()
         saveSettings()
         rebuildSmartPauseMenu()
         handleMeetingCallMonitorUpdate(meetingCallMonitor.currentSnapshot())
+    }
+
+    @objc private func toggleWaitForInput() {
+        inputDeferralSettings.isEnabled.toggle()
+        saveSettings()
+        rebuildSmartPauseMenu()
+        if !inputDeferralSettings.isEnabled && isWaitingForInputDeferral {
+            showBreakOverlay()
+        }
+    }
+
+    @objc private func selectMaxWaitThreshold(_ sender: NSMenuItem) {
+        let validated = InputDeferralSettings.validatedMaxWaitSeconds(sender.tag)
+        inputDeferralSettings.maxWaitThreshold = TimeInterval(validated)
+        saveSettings()
+        rebuildSmartPauseMenu()
+        if isWaitingForInputDeferral {
+            showBreakOverlay()
+        }
     }
 
     @objc private func addExcludedApp(_ sender: NSMenuItem) {
@@ -3240,7 +3357,76 @@ extension AppDelegate {
                 return String(format: localized("smartPauseMenuMeetingFormat"), appName)
             }
             return localized("smartPauseMenuMeeting")
+        case .typingOrDragging:
+            return inputDeferralMenuStatusText()
         }
+    }
+
+    private func inputDeferralMenuStatusText() -> String {
+        switch inputDeferralReason {
+        case .typing:
+            return localized("smartPauseMenuWaitingTyping")
+        case .dragging:
+            return localized("smartPauseMenuWaitingDragging")
+        case .typingAndDragging, .none:
+            return localized("smartPauseMenuWaitingInput")
+        }
+    }
+
+    private func shouldDeferBreakForInputActivity() -> Bool {
+        let now = Date()
+        let startedAt = inputDeferralStartedAt ?? now
+        let waitDuration = now.timeIntervalSince(startedAt)
+        let activity = inputActivityProvider.currentActivity(now: now)
+        let decision = inputDeferralPolicy.evaluate(
+            settings: inputDeferralSettings,
+            activity: activity,
+            waitDuration: waitDuration
+        )
+
+        switch decision {
+        case .triggerNow:
+            return false
+        case .deferBreak(let reason, let recheckAfter):
+            if inputDeferralStartedAt == nil {
+                inputDeferralStartedAt = startedAt
+                logSessionDebug("break_deferred_for_input", context: [
+                    "reason": "\(reason)",
+                    "max_wait_seconds": "\(Int(inputDeferralSettings.maxWaitThreshold))"
+                ])
+            }
+            inputDeferralReason = reason
+            workSessionStartTime = nil
+            postponeStartTime = nil
+            postponeDuration = 0
+            scheduleInputDeferralRecheck(after: recheckAfter)
+            updateStatusBarTitle(now: now)
+            updateMenuTimer(now: now)
+            rescheduleCountdown()
+            return true
+        }
+    }
+
+    private func scheduleInputDeferralRecheck(after interval: TimeInterval) {
+        inputDeferralTimer?.invalidate()
+        let timer = Timer(timeInterval: max(0.1, interval), repeats: false) { [weak self] _ in
+            self?.handleInputDeferralRecheck()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        inputDeferralTimer = timer
+    }
+
+    private func handleInputDeferralRecheck() {
+        inputDeferralTimer = nil
+        guard isWaitingForInputDeferral else { return }
+        showBreakOverlay()
+    }
+
+    private func cancelInputDeferral() {
+        inputDeferralTimer?.invalidate()
+        inputDeferralTimer = nil
+        inputDeferralStartedAt = nil
+        inputDeferralReason = nil
     }
 
     private func handleMeetingCallMonitorUpdate(_ snapshot: MeetingCallMonitor.Snapshot) {
@@ -3277,6 +3463,8 @@ extension AppDelegate {
 
     private func enterSmartPause() {
         guard displaysAreActive else { return }
+        let wasWaitingForInputDeferral = isWaitingForInputDeferral
+        cancelInputDeferral()
         dismissPreBreakHUD()
         countdownScheduler.cancel()
 
@@ -3286,6 +3474,12 @@ extension AppDelegate {
             eventRecorder.endBreakSession()
             cleanupBreakOverlays()
             breakSessionStartTime = nil
+            smartPauseSnapshot = SmartPauseSnapshot(
+                remainingWorkTime: nil,
+                remainingPostponeTime: nil,
+                hadDeferredBreak: true
+            )
+        } else if wasWaitingForInputDeferral {
             smartPauseSnapshot = SmartPauseSnapshot(
                 remainingWorkTime: nil,
                 remainingPostponeTime: nil,

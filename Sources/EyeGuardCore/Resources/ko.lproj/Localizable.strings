@@ -169,3 +169,12 @@
 "smartPauseStatusBar" = "일시 정지";
 "smartPauseMenuMeeting" = "일시 정지됨: 회의/통화 중";
 "smartPauseMenuMeetingFormat" = "일시 정지됨: 회의/통화 중 (%@)";
+"smartPauseWaitForInputEnabled" = "입력 및 드래그 대기";
+"smartPauseMaxWait" = "최대 대기 시간";
+"smartPauseMaxWait30" = "30초";
+"smartPauseMaxWait60" = "1분";
+"smartPauseMaxWait120" = "2분";
+"smartPauseWaitingStatusBar" = "대기 중";
+"smartPauseMenuWaitingInput" = "대기 중: 입력 또는 드래그 중";
+"smartPauseMenuWaitingTyping" = "대기 중: 키보드 입력 중";
+"smartPauseMenuWaitingDragging" = "대기 중: 마우스 드래그 중";

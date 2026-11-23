@@ -169,3 +169,12 @@
 "smartPauseStatusBar" = "Paused";
 "smartPauseMenuMeeting" = "Paused: In a meeting/call";
 "smartPauseMenuMeetingFormat" = "Paused: In a meeting/call (%@)";
+"smartPauseWaitForInputEnabled" = "Wait for Typing & Dragging";
+"smartPauseMaxWait" = "Max Wait Threshold";
+"smartPauseMaxWait30" = "30 sec";
+"smartPauseMaxWait60" = "1 min";
+"smartPauseMaxWait120" = "2 min";
+"smartPauseWaitingStatusBar" = "Waiting";
+"smartPauseMenuWaitingInput" = "Waiting: Typing or dragging";
+"smartPauseMenuWaitingTyping" = "Waiting: Typing in progress";
+"smartPauseMenuWaitingDragging" = "Waiting: Mouse drag in progress";
