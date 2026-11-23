@@ -144,3 +144,12 @@
 "verdictHealthyReason" = "휴식 완료율이 기준을 충족하고 연속 작업도 명확히 길지 않습니다";
 "verdictAttentionTitle" = "주의 필요";
 "verdictAttentionReason" = "오늘 기록은 있지만 아직 건강한 리듬이라고 판단하기에는 부족합니다";
+"preBreakHeadsUp" = "휴식 사전 알림";
+"preBreakOff" = "끄기";
+"preBreakSeconds10" = "10초";
+"preBreakSeconds20" = "20초";
+"preBreakSeconds30" = "30초";
+"preBreakCountdownFormat" = "%d초 후 휴식";
+"preBreakSnooze1" = "+1분";
+"preBreakSnooze5" = "+5분";
+"preBreakSkip" = "건너뛰기";

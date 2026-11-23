@@ -1,7 +1,7 @@
 ---
 id: TASK-3
 title: Pre-break heads-up & countdown
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
 updated_date: '2026-11-23T16:31:00Z'
@@ -23,7 +23,7 @@ Show a non-intrusive pre-break heads-up warning and countdown before the full-sc
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Configurable heads-up lead time (off, 10s, 20s, 30s)
-- [ ] #2 Pre-break HUD displays countdown with quick Snooze (+1m/+5m) and Skip actions
-- [ ] #3 Unit tests cover pre-break state transitions, snooze cancellation, and overlay handoff
+- [x] #1 Configurable heads-up lead time (off, 10s, 20s, 30s)
+- [x] #2 Pre-break HUD displays countdown with quick Snooze (+1m/+5m) and Skip actions
+- [x] #3 Unit tests cover pre-break state transitions, snooze cancellation, and overlay handoff
 <!-- AC:END -->

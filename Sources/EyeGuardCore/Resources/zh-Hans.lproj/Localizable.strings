@@ -144,3 +144,12 @@
 "verdictHealthyReason" = "休息完成率达标，连续工作没有明显超长";
 "verdictAttentionTitle" = "需要留意";
 "verdictAttentionReason" = "今天有记录，但还不足以判断为健康节奏";
+"preBreakHeadsUp" = "休息前提醒";
+"preBreakOff" = "关闭";
+"preBreakSeconds10" = "10 秒";
+"preBreakSeconds20" = "20 秒";
+"preBreakSeconds30" = "30 秒";
+"preBreakCountdownFormat" = "%d 秒后开始休息";
+"preBreakSnooze1" = "+1分钟";
+"preBreakSnooze5" = "+5分钟";
+"preBreakSkip" = "跳过";
