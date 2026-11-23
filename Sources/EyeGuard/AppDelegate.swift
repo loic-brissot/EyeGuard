@@ -35,6 +35,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let screenCaptureEnabled = "smartPauseScreenCaptureEnabled"
         static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
         static let meetingExcludedApps = "smartPauseMeetingExcludedApps"
+        static let calendarEnabled = "smartPauseCalendarEnabled"
+        static let calendarSelectedIDs = "smartPauseCalendarSelectedIDs"
+        static let calendarBreakAction = "smartPauseCalendarBreakAction"
         static let fullscreenPauseEnabled = "smartPauseFullscreenEnabled"
         static let deepFocusApps = "smartPauseDeepFocusApps"
         static let waitForInputEnabled = "smartPauseWaitForInputEnabled"
@@ -45,6 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         var remainingWorkTime: TimeInterval?
         var remainingPostponeTime: TimeInterval?
         var hadDeferredBreak: Bool
+        var shouldResetToFreshWorkOnResume: Bool = false
     }
 
     private var statusBarItem: NSStatusItem!
@@ -125,9 +129,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let smartPausePolicy = SmartPausePolicy()
     private var screenCaptureSettings = ScreenCaptureSettings()
     private var meetingAutoPauseSettings = MeetingAutoPauseSettings()
+    private var calendarPauseSettings = CalendarPauseSettings()
     private var focusAppPauseSettings = FocusAppPauseSettings()
     private lazy var screenCaptureMonitor = ScreenCaptureMonitor()
     private lazy var meetingCallMonitor = MeetingCallMonitor()
+    private lazy var calendarEventMonitor = CalendarEventMonitor()
     private lazy var focusAppMonitor = FocusAppMonitor()
     private var smartPauseEvaluation: SmartPauseEvaluation = .activeNone
     private var smartPauseSnapshot: SmartPauseSnapshot?
@@ -200,6 +206,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         smartPauseEvaluation.isPaused && !currentNightStatus().isLocked && !isTemporaryDisableActive
     }
 
+    private var isSkippingCalendarBreakActive: Bool {
+        guard case .calendarEvent = smartPauseEvaluation.reason else {
+            return false
+        }
+        return calendarPauseSettings.breakAction == .skip
+    }
+
     private var isWaitingForInputDeferral: Bool {
         inputDeferralStartedAt != nil && !currentNightStatus().isLocked && !isTemporaryDisableActive && !isSmartPaused
     }
@@ -228,11 +241,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         meetingCallMonitor.onUpdate = { [weak self] _ in
             self?.evaluateSmartPause()
         }
+        calendarEventMonitor.onUpdate = { [weak self] _ in
+            self?.evaluateSmartPause()
+        }
         focusAppMonitor.onUpdate = { [weak self] _ in
             self?.evaluateSmartPause()
         }
         screenCaptureMonitor.start()
         meetingCallMonitor.start()
+        calendarEventMonitor.start()
         focusAppMonitor.start()
         schedulingReady = true
         
@@ -621,6 +638,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stateSnapshotTimer?.invalidate()
         screenCaptureMonitor.stop()
         meetingCallMonitor.stop()
+        calendarEventMonitor.stop()
         focusAppMonitor.stop()
         cancelInputDeferral()
         dismissPreBreakHUD()
@@ -698,6 +716,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         meetingAutoPauseSettings.excludedApps = UserDefaults.standard.stringArray(forKey: SmartPauseDefaults.meetingExcludedApps) ?? []
 
+        if UserDefaults.standard.object(forKey: SmartPauseDefaults.calendarEnabled) != nil {
+            calendarPauseSettings.isEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.calendarEnabled)
+        } else {
+            calendarPauseSettings.isEnabled = false
+        }
+        let savedCalendarIDs = UserDefaults.standard.stringArray(forKey: SmartPauseDefaults.calendarSelectedIDs) ?? []
+        calendarPauseSettings.selectedCalendarIDs = Set(savedCalendarIDs)
+        if let rawBreakAction = UserDefaults.standard.string(forKey: SmartPauseDefaults.calendarBreakAction),
+           let breakAction = CalendarBreakAction(rawValue: rawBreakAction) {
+            calendarPauseSettings.breakAction = breakAction
+        } else {
+            calendarPauseSettings.breakAction = .postpone
+        }
+
         if UserDefaults.standard.object(forKey: SmartPauseDefaults.fullscreenPauseEnabled) != nil {
             focusAppPauseSettings.fullscreenPauseEnabled = UserDefaults.standard.bool(forKey: SmartPauseDefaults.fullscreenPauseEnabled)
         } else {
@@ -755,6 +787,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(screenCaptureSettings.isEnabled, forKey: SmartPauseDefaults.screenCaptureEnabled)
         UserDefaults.standard.set(meetingAutoPauseSettings.isEnabled, forKey: SmartPauseDefaults.meetingAutoPauseEnabled)
         UserDefaults.standard.set(meetingAutoPauseSettings.excludedApps, forKey: SmartPauseDefaults.meetingExcludedApps)
+        UserDefaults.standard.set(calendarPauseSettings.isEnabled, forKey: SmartPauseDefaults.calendarEnabled)
+        UserDefaults.standard.set(Array(calendarPauseSettings.selectedCalendarIDs).sorted(), forKey: SmartPauseDefaults.calendarSelectedIDs)
+        UserDefaults.standard.set(calendarPauseSettings.breakAction.rawValue, forKey: SmartPauseDefaults.calendarBreakAction)
         UserDefaults.standard.set(focusAppPauseSettings.fullscreenPauseEnabled, forKey: SmartPauseDefaults.fullscreenPauseEnabled)
         if let encodedDeepFocus = try? JSONEncoder().encode(focusAppPauseSettings.deepFocusApps) {
             UserDefaults.standard.set(encodedDeepFocus, forKey: SmartPauseDefaults.deepFocusApps)
@@ -781,6 +816,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "smart_pause_screen_capture_enabled": "\(screenCaptureSettings.isEnabled)",
             "smart_pause_meeting_enabled": "\(meetingAutoPauseSettings.isEnabled)",
             "smart_pause_excluded_count": "\(meetingAutoPauseSettings.excludedApps.count)",
+            "smart_pause_calendar_enabled": "\(calendarPauseSettings.isEnabled)",
+            "smart_pause_calendar_selected_count": "\(calendarPauseSettings.selectedCalendarIDs.count)",
+            "smart_pause_calendar_break_action": calendarPauseSettings.breakAction.rawValue,
             "smart_pause_fullscreen_enabled": "\(focusAppPauseSettings.fullscreenPauseEnabled)",
             "smart_pause_deep_focus_count": "\(focusAppPauseSettings.deepFocusApps.count)",
             "smart_pause_wait_for_input_enabled": "\(inputDeferralSettings.isEnabled)",
@@ -1692,6 +1730,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stateSnapshotTimer?.invalidate()
         screenCaptureMonitor.stop()
         meetingCallMonitor.stop()
+        calendarEventMonitor.stop()
         focusAppMonitor.stop()
         dismissPreBreakHUD()
         for overlay in nightLockOverlays {
@@ -3209,6 +3248,14 @@ extension AppDelegate {
 
         submenu.addItem(NSMenuItem.separator())
 
+        let calendarEventsItem = NSMenuItem(
+            title: localized("smartPauseCalendarEvents"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        calendarEventsItem.submenu = buildCalendarEventsSubmenu()
+        submenu.addItem(calendarEventsItem)
+
         let excludedAppsItem = NSMenuItem(
             title: localized("smartPauseExcludedApps"),
             action: nil,
@@ -3224,6 +3271,100 @@ extension AppDelegate {
         )
         deepFocusAppsItem.submenu = buildDeepFocusAppsSubmenu()
         submenu.addItem(deepFocusAppsItem)
+
+        return submenu
+    }
+
+    private func buildCalendarEventsSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let snapshot = calendarEventMonitor.currentSnapshot()
+
+        let enabledItem = NSMenuItem(
+            title: localized("smartPauseCalendarEnabled"),
+            action: #selector(toggleCalendarPause),
+            keyEquivalent: ""
+        )
+        enabledItem.target = self
+        enabledItem.state = calendarPauseSettings.isEnabled ? .on : .off
+        submenu.addItem(enabledItem)
+
+        switch snapshot.permissionState {
+        case .notDetermined:
+            let grantItem = NSMenuItem(
+                title: localized("smartPauseCalendarGrantAccess"),
+                action: #selector(requestCalendarAccess),
+                keyEquivalent: ""
+            )
+            grantItem.target = self
+            submenu.addItem(grantItem)
+        case .denied, .restricted:
+            submenu.addItem(disabledMenuItem(localized("smartPauseCalendarPermissionDenied")))
+            let settingsItem = NSMenuItem(
+                title: localized("smartPauseCalendarOpenSettings"),
+                action: #selector(openCalendarSettings),
+                keyEquivalent: ""
+            )
+            settingsItem.target = self
+            submenu.addItem(settingsItem)
+        case .authorized:
+            break
+        }
+
+        submenu.addItem(NSMenuItem.separator())
+        submenu.addItem(disabledMenuItem(localized("smartPauseCalendarBreakAction")))
+
+        let postponeItem = NSMenuItem(
+            title: localized("smartPauseCalendarActionPostpone"),
+            action: #selector(selectCalendarBreakAction(_:)),
+            keyEquivalent: ""
+        )
+        postponeItem.target = self
+        postponeItem.representedObject = CalendarBreakAction.postpone.rawValue
+        postponeItem.state = calendarPauseSettings.breakAction == .postpone ? .on : .off
+        submenu.addItem(postponeItem)
+
+        let skipItem = NSMenuItem(
+            title: localized("smartPauseCalendarActionSkip"),
+            action: #selector(selectCalendarBreakAction(_:)),
+            keyEquivalent: ""
+        )
+        skipItem.target = self
+        skipItem.representedObject = CalendarBreakAction.skip.rawValue
+        skipItem.state = calendarPauseSettings.breakAction == .skip ? .on : .off
+        submenu.addItem(skipItem)
+
+        submenu.addItem(NSMenuItem.separator())
+        submenu.addItem(disabledMenuItem(localized("smartPauseCalendarCalendars")))
+
+        if snapshot.permissionState != .authorized {
+            submenu.addItem(disabledMenuItem(localized("smartPauseCalendarAccessRequired")))
+        } else if snapshot.availableCalendars.isEmpty {
+            submenu.addItem(disabledMenuItem(localized("smartPauseCalendarNoCalendars")))
+        } else {
+            let allCalendarsItem = NSMenuItem(
+                title: localized("smartPauseCalendarAllCalendars"),
+                action: #selector(selectAllCalendars),
+                keyEquivalent: ""
+            )
+            allCalendarsItem.target = self
+            allCalendarsItem.state = calendarPauseSettings.selectedCalendarIDs.isEmpty ? .on : .off
+            submenu.addItem(allCalendarsItem)
+
+            for calendar in snapshot.availableCalendars {
+                let title = calendar.sourceTitle.isEmpty
+                    ? calendar.title
+                    : "\(calendar.title) (\(calendar.sourceTitle))"
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(toggleCalendarSelection(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = calendar.id
+                item.state = calendarPauseSettings.selectedCalendarIDs.contains(calendar.id) ? .on : .off
+                submenu.addItem(item)
+            }
+        }
 
         return submenu
     }
@@ -3479,6 +3620,64 @@ extension AppDelegate {
         evaluateSmartPause(refreshSnapshots: true)
     }
 
+    @objc private func toggleCalendarPause() {
+        let nextEnabled = !calendarPauseSettings.isEnabled
+        calendarPauseSettings.isEnabled = nextEnabled
+        saveSettings()
+
+        if nextEnabled && calendarEventMonitor.currentSnapshot().permissionState == .notDetermined {
+            calendarEventMonitor.requestAccess { [weak self] _ in
+                self?.rebuildSmartPauseMenu()
+                self?.evaluateSmartPause(refreshSnapshots: true)
+            }
+            return
+        }
+
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func requestCalendarAccess() {
+        calendarEventMonitor.requestAccess { [weak self] _ in
+            self?.rebuildSmartPauseMenu()
+            self?.evaluateSmartPause(refreshSnapshots: true)
+        }
+    }
+
+    @objc private func openCalendarSettings() {
+        calendarEventMonitor.openCalendarPrivacySettings()
+    }
+
+    @objc private func selectCalendarBreakAction(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let action = CalendarBreakAction(rawValue: rawValue) else {
+            return
+        }
+        calendarPauseSettings.breakAction = action
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func selectAllCalendars() {
+        calendarPauseSettings.selectedCalendarIDs.removeAll()
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
+    @objc private func toggleCalendarSelection(_ sender: NSMenuItem) {
+        guard let calendarID = sender.representedObject as? String else { return }
+        if calendarPauseSettings.selectedCalendarIDs.contains(calendarID) {
+            calendarPauseSettings.selectedCalendarIDs.remove(calendarID)
+        } else {
+            calendarPauseSettings.selectedCalendarIDs.insert(calendarID)
+        }
+        saveSettings()
+        rebuildSmartPauseMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+    }
+
     @objc private func toggleMeetingAutoPause() {
         meetingAutoPauseSettings.isEnabled.toggle()
         saveSettings()
@@ -3669,6 +3868,11 @@ extension AppDelegate {
                 return String(format: localized("smartPauseMenuMeetingFormat"), appName)
             }
             return localized("smartPauseMenuMeeting")
+        case .calendarEvent(let title):
+            if let title, !title.isEmpty {
+                return String(format: localized("smartPauseMenuCalendarFormat"), title)
+            }
+            return localized("smartPauseMenuCalendar")
         case .fullscreenApp(let appName):
             if let appName, !appName.isEmpty {
                 return String(format: localized("smartPauseMenuFullscreenFormat"), appName)
@@ -3754,12 +3958,15 @@ extension AppDelegate {
     private func evaluateSmartPause(refreshSnapshots: Bool = false) {
         let screenCaptureSnapshot = refreshSnapshots ? screenCaptureMonitor.currentSnapshot() : screenCaptureMonitor.lastSnapshot
         let meetingSnapshot = refreshSnapshots ? meetingCallMonitor.currentSnapshot() : meetingCallMonitor.lastSnapshot
+        let calendarSnapshot = refreshSnapshots ? calendarEventMonitor.currentSnapshot() : calendarEventMonitor.lastSnapshot
         let focusSnapshot = refreshSnapshots ? focusAppMonitor.currentSnapshot() : focusAppMonitor.lastSnapshot
         let runningApps = focusSnapshot.runningApps.isEmpty ? meetingSnapshot.runningApps : focusSnapshot.runningApps
         let nextEvaluation = smartPausePolicy.evaluate(
             screenCaptureSettings: screenCaptureSettings,
             screenCaptureSnapshot: screenCaptureSnapshot,
             meetingSettings: meetingAutoPauseSettings,
+            calendarSettings: calendarPauseSettings,
+            calendarSnapshot: calendarSnapshot,
             focusAppSettings: focusAppPauseSettings,
             isAudioInputActive: meetingSnapshot.isAudioInputActive,
             isFrontmostFullscreen: focusSnapshot.isFrontmostFullscreen,
@@ -3786,6 +3993,10 @@ extension AppDelegate {
         } else if wasPaused && !nextEvaluation.isPaused {
             leaveSmartPause()
         } else if nextEvaluation.isPaused {
+            if isSkippingCalendarBreakActive {
+                smartPauseSnapshot?.shouldResetToFreshWorkOnResume = true
+                smartPauseSnapshot?.hadDeferredBreak = false
+            }
             updateStatusBarTitle()
             updateMenuTimer()
         }
@@ -3804,10 +4015,32 @@ extension AppDelegate {
             eventRecorder.endBreakSession()
             cleanupBreakOverlays()
             breakSessionStartTime = nil
+            if isSkippingCalendarBreakActive {
+                workSessionStartTime = nil
+                postponeStartTime = nil
+                postponeDuration = 0
+                smartPauseSnapshot = SmartPauseSnapshot(
+                    remainingWorkTime: nil,
+                    remainingPostponeTime: nil,
+                    hadDeferredBreak: false,
+                    shouldResetToFreshWorkOnResume: true
+                )
+            } else {
+                smartPauseSnapshot = SmartPauseSnapshot(
+                    remainingWorkTime: nil,
+                    remainingPostponeTime: nil,
+                    hadDeferredBreak: true
+                )
+            }
+        } else if isSkippingCalendarBreakActive {
+            workSessionStartTime = nil
+            postponeStartTime = nil
+            postponeDuration = 0
             smartPauseSnapshot = SmartPauseSnapshot(
                 remainingWorkTime: nil,
                 remainingPostponeTime: nil,
-                hadDeferredBreak: true
+                hadDeferredBreak: false,
+                shouldResetToFreshWorkOnResume: true
             )
         } else if wasWaitingForInputDeferral {
             smartPauseSnapshot = SmartPauseSnapshot(
@@ -3860,7 +4093,9 @@ extension AppDelegate {
             return
         }
 
-        if snapshot?.hadDeferredBreak == true {
+        if snapshot?.shouldResetToFreshWorkOnResume == true {
+            startWorkTimer(forceFreshSession: true)
+        } else if snapshot?.hadDeferredBreak == true {
             showBreakOverlay()
         } else if let remainingPostpone = snapshot?.remainingPostponeTime, remainingPostpone > 0 {
             postponeStartTime = Date()

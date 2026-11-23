@@ -194,3 +194,17 @@
 "smartPauseScreenCaptureLimitedPermission" = "화면 기록 권한이 없어 감지가 제한됩니다";
 "smartPauseMenuScreenCapture" = "일시 정지됨: 화면 공유 / 기록 중";
 "smartPauseMenuScreenCaptureFormat" = "일시 정지됨: 화면 공유 / 기록 중 (%@)";
+"smartPauseCalendarEvents" = "캘린더 일정";
+"smartPauseCalendarEnabled" = "바쁨 상태의 캘린더 일정 중 일시 정지";
+"smartPauseCalendarGrantAccess" = "캘린더 접근 권한 허용...";
+"smartPauseCalendarPermissionDenied" = "캘린더 접근 권한이 거부됨";
+"smartPauseCalendarOpenSettings" = "시스템 설정 열기...";
+"smartPauseCalendarBreakAction" = "휴식 시간 동작";
+"smartPauseCalendarActionPostpone" = "일정이 끝날 때까지 휴식 연기";
+"smartPauseCalendarActionSkip" = "일정 중 휴식 건너뛰기";
+"smartPauseCalendarCalendars" = "모니터링할 캘린더";
+"smartPauseCalendarAccessRequired" = "캘린더를 선택하려면 접근 권한을 허용하세요";
+"smartPauseCalendarNoCalendars" = "캘린더를 찾을 수 없음";
+"smartPauseCalendarAllCalendars" = "모든 캘린더";
+"smartPauseMenuCalendar" = "일시 정지됨: 바쁨 캘린더 일정";
+"smartPauseMenuCalendarFormat" = "일시 정지됨: 캘린더 일정 (%@)";

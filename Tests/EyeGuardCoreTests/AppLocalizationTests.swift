@@ -161,7 +161,21 @@ final class AppLocalizationTests: XCTestCase {
             "smartPauseScreenCaptureEnabled",
             "smartPauseScreenCaptureLimitedPermission",
             "smartPauseMenuScreenCapture",
-            "smartPauseMenuScreenCaptureFormat"
+            "smartPauseMenuScreenCaptureFormat",
+            "smartPauseCalendarEvents",
+            "smartPauseCalendarEnabled",
+            "smartPauseCalendarGrantAccess",
+            "smartPauseCalendarPermissionDenied",
+            "smartPauseCalendarOpenSettings",
+            "smartPauseCalendarBreakAction",
+            "smartPauseCalendarActionPostpone",
+            "smartPauseCalendarActionSkip",
+            "smartPauseCalendarCalendars",
+            "smartPauseCalendarAccessRequired",
+            "smartPauseCalendarNoCalendars",
+            "smartPauseCalendarAllCalendars",
+            "smartPauseMenuCalendar",
+            "smartPauseMenuCalendarFormat"
         ]
 
         for language in AppLocalization.supportedLanguageCodes {
