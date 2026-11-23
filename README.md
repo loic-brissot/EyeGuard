@@ -1,103 +1,60 @@
-# TwentyGuard
+# EyeGuard
 
-<div align="center">
-
-<img src="marketing/icons/twentyguard-app-icon-1024.png" width="96" alt="TwentyGuard app icon">
-
-**Strict 20-20-20 breaks for macOS.**
+**Gentle, flow-aware 20-20-20 screen breaks for macOS.**
 
 [![macOS](https://img.shields.io/badge/macOS-12.0+-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[Download](#installation) · [Features](#features) · [Build](#build-from-source) · [中文](README_CN.md)
+EyeGuard is designed to reduce digital eye strain and screen fatigue by encouraging regular short pauses throughout the workday. The goal is to follow the optometrist-recommended **20-20-20 rule**: every 20 minutes, look at something 20 feet away for 20 seconds. EyeGuard gently blocks your displays with a calm screensaver overlay that can be snoozed or skipped whenever needed. Everything runs locally on your Mac with zero accounts, subscriptions, or cloud telemetry.
 
-</div>
+## Origin, Inspirations & Alternatives
 
-TwentyGuard is a native macOS menu bar app for people who keep working through
-their eye breaks. It follows the 20-20-20 rule, supports custom work rhythms,
-limits repeated postpones, reports eye-health patterns, and can lock the screen
-at night when you need a real boundary.
+EyeGuard is a fork of **[TwentyGuard](https://github.com/JavenGroup/TwentyGuard)** (MIT-licensed), building on its lean native Swift/AppKit core, multi-monitor overlay engine, and local SQLite compliance tracking to add a calmer screensaver experience, optional break skipping, and flow-aware smart pausing.
 
-## Screenshots
+EyeGuard draws inspiration from, and sits alongside, several great macOS and cross-platform break reminder apps:
 
-<table>
-  <tr>
-    <td align="center" width="33%">
-      <img src="marketing/assets/menu-main-en-v1.5.2.png" alt="TwentyGuard menu bar controls" width="260">
-    </td>
-    <td align="center" width="33%">
-      <img src="marketing/assets/break-overlay-en-v1.5.2.png" alt="TwentyGuard break overlay with postpone limits" width="320">
-    </td>
-    <td align="center" width="33%">
-      <img src="marketing/assets/health-report-en-v1.5.2.png" alt="TwentyGuard eye health report" width="320">
-    </td>
-  </tr>
-  <tr>
-    <td align="center"><strong>Menu bar control</strong><br>Modes, postpone limit, language, and night lock.</td>
-    <td align="center"><strong>Strict break overlay</strong><br>Full-screen pause with capped postpones.</td>
-    <td align="center"><strong>Eye health report</strong><br>Verdict-first stats for recent screen rhythm.</td>
-  </tr>
-</table>
+- **[LookAway](https://lookaway.com/)** — Polished native macOS break app known for zero-config Smart Pause (mic, typing, dragging, fullscreen), wellness nudges, and iPhone sync.
+- **[Time Out](https://www.dejal.com/timeout/)** — Long-standing, deeply configurable native macOS break engine with rich themes, rules, and break actions.
+- **[Pomy](https://apps.apple.com/us/app/pomy-lite-2/id6444042376)** — Minimalist native macOS 20-20-20 menu bar timer with a simple dismissible overlay.
+- **[DeskRest](https://deskrest.com/)** — Native macOS break reminder featuring posture alerts, guided exercises, and context-aware pausing.
+- **[Stretchly](https://hovancik.net/stretchly/)** — Popular free, open-source, cross-platform break reminder supporting mini and long breaks.
+- **[BreakTimer](https://breaktimer.app/)** — Free, open-source, cross-platform timer focused on simple schedules and working-hours limits.
 
-## Features
+## Current Features
 
-- **Strict break overlay**: full-screen rest prompts across multiple monitors.
-- **20-20-20 mode**: 20 minutes of screen use, then a 20 second eye break.
-- **Custom mode**: screen-use presets from 10 to 60 minutes, including 15, 25,
-  35, and 45 minute options.
-- **Postpone limits**: postpone by 1, 2, or 5 minutes without delaying breaks
-  forever.
-- **Temporary disable**: pause break enforcement for one hour during meetings,
-  then resume normal protection automatically.
-- **Eye health report**: opens with a clear verdict, then shows completion,
-  postpone, and recent-day details.
-- **Night screen lock**: gradually tightens screen-use time in the evening, then
-  fully blocks screen use until the configured morning time; urgent exceptions
-  require a timed Night Override flow.
-- **Local-first**: settings, logs, and statistics stay on your Mac.
-- **5 languages**: English, Simplified Chinese, Spanish, Japanese, and Korean.
+Inherited from the TwentyGuard baseline (see [`backlog/`](backlog/) for the EyeGuard roadmap):
 
-## Installation
+- **Multi-monitor break overlay**: full-screen rest window covering every connected display.
+- **20-20-20 & custom rhythms**: default 20 min work / 20 s break, or custom intervals (10–60 min work, 10 s–10 min break).
+- **Postpone controls with caps**: postpone by 1, 2, or 5 minutes (`⌘1`, `⌘2`, `⌘5`) within configurable cumulative limits.
+- **Temporary disable**: pause reminders for 1 hour (`⌘D`) during meetings or focused sessions, with automatic resumption.
+- **Sleep & lock awareness**: resets to a fresh work cycle automatically after sleep, screen lock, or screensaver wake.
+- **Eye health report**: local SQLite verdict-first dashboard with daily, 7-day, and monthly views (`⌘S`).
+- **Night screen lock**: optional evening screen-time boundary with a timed override flow.
+- **Local-first & multilingual**: zero network dependency, supporting English, Simplified Chinese, Spanish, Japanese, and Korean.
 
-1. Download the latest `TwentyGuard-v*.dmg` from
-   [Releases](https://github.com/JavenGroup/TwentyGuard/releases).
-2. Open the DMG.
-3. Drag `TwentyGuard.app` into `Applications`.
-4. Launch TwentyGuard from Applications.
+## Roadmap
 
-The release DMG is Developer ID signed, Apple-notarized, and accepted by
-Gatekeeper.
-
-## Usage
-
-- Click the menu bar icon to switch between 20-20-20 mode and custom mode.
-- Use **Break Now** when you want an immediate rest.
-- Use **Disable for 1 Hour** before meetings or special focused sessions; it is
-  not available during Night Screen Lock.
-- During a break, use `Command-1`, `Command-2`, or `Command-5` to postpone within
-  the configured limit.
-- Open **Eye Health Report** to see whether today's pattern is healthy or which
-  behavior needs attention.
-- Enable **Night Screen Lock** if you want the app to enforce an evening cutoff.
-- If you truly need the computer during the lock, use **Night Override** from
-  the lock screen; it requires a wait, a reason, and exact typed confirmation.
+Roadmap planning lives in [`backlog/`](backlog/) using [Backlog.md](https://github.com/MrLesk/Backlog.md). Run `backlog task list` to view upcoming milestones, including the EyeGuard target rebrand, skippable screensaver overlay, pre-break heads-up, custom themes, and Smart Pause rules.
 
 ## Build From Source
+
+> **Note:** Until the initial codebase rebrand task is completed, Swift package targets and build artifacts still use the upstream `TwentyGuard` identifiers.
 
 Requirements:
 
 - macOS 12.0+
-- Xcode command line tools or Swift 5.9+
+- Xcode Command Line Tools (Swift 5.9+)
 
 ```bash
-git clone https://github.com/JavenGroup/TwentyGuard.git
-cd TwentyGuard
+git clone https://github.com/loic-brissot/EyeGuard.git
+cd EyeGuard
 make build
 make run
 ```
 
-Build and install the app bundle:
+Build and install the standalone app bundle:
 
 ```bash
 make build-app
@@ -105,49 +62,21 @@ make install
 make launch
 ```
 
-Create a local DMG:
+Run tests and package verification:
 
 ```bash
+make test
+make test-lifecycle
 make dmg
 ```
 
-Create a public release DMG after installing a Developer ID Application
-certificate and storing notarization credentials:
-
-```bash
-make release \
-  TEAM_ID=<team-id> \
-  DEVELOPER_ID_APPLICATION="Developer ID Application: <name> (<team-id>)"
-```
-
-## Project Structure
-
-```text
-TwentyGuard/
-├── Sources/
-│   ├── TwentyGuard/       # macOS app target
-│   └── TwentyGuardCore/   # shared policy and statistics logic
-├── docs/                         # product and technical notes
-├── marketing/                    # launch positioning and public copy drafts
-├── scripts/                      # release helpers
-├── Info.plist
-├── Makefile
-└── Package.swift
-```
-
-The Swift package, targets, executable, bundle metadata, build output, install
-path, and release assets all use the TwentyGuard name.
-
 ## Privacy
 
-TwentyGuard does not need network access for its core behavior. Settings,
-session logs, and statistics are stored locally on your Mac.
+EyeGuard requires no network access, account, or analytics service. All preferences, logs, and break statistics stay strictly local on your Mac.
 
 ## Contributing
 
-Issues and pull requests are welcome. For major behavior changes, open an issue
-first so the product intent stays clear: calm UI, strict breaks, local-first
-data.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for our branching workflow, PR guidelines, testing protocol, versioning, and release notes standard.
 
 ## License
 
