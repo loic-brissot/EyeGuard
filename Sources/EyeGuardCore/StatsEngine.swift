@@ -303,6 +303,10 @@ public struct StatsWeekSnapshot: Equatable, Sendable {
         days.reduce(0) { $0 + $1.completedBreaks }
     }
 
+    public var totalSkippedBreaks: Int {
+        days.reduce(0) { $0 + $1.skippedBreaks }
+    }
+
     public var totalPostponedSessions: Int {
         days.reduce(0) { $0 + $1.postponedSessions }
     }
