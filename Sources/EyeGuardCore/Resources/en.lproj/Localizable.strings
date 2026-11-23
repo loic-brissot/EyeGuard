@@ -144,3 +144,12 @@
 "verdictHealthyReason" = "Break completion is on target and continuous work is not obviously too long";
 "verdictAttentionTitle" = "Needs Attention";
 "verdictAttentionReason" = "There is data today, but not enough to call it a healthy rhythm yet";
+"preBreakHeadsUp" = "Pre-Break Heads-Up";
+"preBreakOff" = "Off";
+"preBreakSeconds10" = "10 sec";
+"preBreakSeconds20" = "20 sec";
+"preBreakSeconds30" = "30 sec";
+"preBreakCountdownFormat" = "Break in %ds";
+"preBreakSnooze1" = "+1m";
+"preBreakSnooze5" = "+5m";
+"preBreakSkip" = "Skip";

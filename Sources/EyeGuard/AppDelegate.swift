@@ -86,6 +86,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var postponeLimitMenuItems: [NSMenuItem] = []
     private var showCountdownInStatusBar: Bool = false
     private var showCountdownMenuItem: NSMenuItem!
+    private let preBreakPolicy = PreBreakHeadsUpPolicy()
+    private var preBreakLeadTime: PreBreakLeadTime = .defaultLeadTime
+    private var preBreakHUDWindow: PreBreakHUDWindow?
+    private var preBreakLeadTimeMenuItems: [NSMenuItem] = []
 
     // Break skip settings
     private var breakSkipSettings = BreakSkipSettings()
@@ -436,12 +440,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             phase = .paused
         }
+        let preBreakLeadTimeSeconds: Int
+        switch phase {
+        case .work:
+            preBreakLeadTimeSeconds = preBreakPolicy.effectiveLeadTimeSeconds(
+                leadTime: preBreakLeadTime,
+                workDurationSeconds: status.effectiveWorkDurationSeconds
+            )
+        case .postponed:
+            preBreakLeadTimeSeconds = preBreakPolicy.effectiveLeadTimeSeconds(
+                leadTime: preBreakLeadTime,
+                workDurationSeconds: Int(postponeDuration)
+            )
+        case .rest, .temporarilyDisabled, .nightLocked, .paused:
+            preBreakLeadTimeSeconds = 0
+        }
         return CountdownTiming.plan(
             now: now, phase: phase,
             nightTransition: nightPolicy.nextTransition(after: now, status: status, isEnabled: nightRestrictionSettings.isEnabled),
             overrideUntil: nightOverrideState?.until,
             showStatusCountdown: showCountdownInStatusBar,
-            menuIsOpen: menuIsOpen, displaysAreActive: displaysAreActive
+            menuIsOpen: menuIsOpen, displaysAreActive: displaysAreActive,
+            preBreakLeadTimeSeconds: preBreakLeadTimeSeconds
         )
     }
 
@@ -480,6 +500,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if breakSessionStartTime == nil || status.isLocked || status.isOverrideActive {
             updateStatusBarTitle(now: now, status: status)
         }
+        updatePreBreakHUD(now: now, status: status)
         updateMenuTimer(now: now, status: status)
         if menuIsOpen { updateTemporaryDisableMenuItem() }
     }
@@ -542,6 +563,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         schedulingReady = false
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
+        dismissPreBreakHUD()
         for overlay in nightLockOverlays { overlay.hideOverlay() }
         nightLockOverlays.removeAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -554,6 +576,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func loadSettings() {
         showCountdownInStatusBar = UserDefaults.standard.bool(forKey: "showCountdownInStatusBar")
         isCustomMode = UserDefaults.standard.bool(forKey: "isCustomMode")
+        if let savedPreBreakSeconds = UserDefaults.standard.object(forKey: "preBreakHeadsUpSeconds") as? Int {
+            preBreakLeadTime = PreBreakLeadTime.validated(savedPreBreakSeconds)
+        } else {
+            preBreakLeadTime = .defaultLeadTime
+        }
         
         // Load language setting
         if let savedLanguage = UserDefaults.standard.string(forKey: "currentLanguage"),
@@ -613,6 +640,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func saveSettings() {
         UserDefaults.standard.set(showCountdownInStatusBar, forKey: "showCountdownInStatusBar")
         UserDefaults.standard.set(isCustomMode, forKey: "isCustomMode")
+        UserDefaults.standard.set(preBreakLeadTime.rawValue, forKey: "preBreakHeadsUpSeconds")
         UserDefaults.standard.set(customWorkDuration, forKey: "customWorkDuration")
         UserDefaults.standard.set(customBreakDuration, forKey: "customBreakDuration")
         UserDefaults.standard.set(currentLanguage, forKey: "currentLanguage")
@@ -627,6 +655,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 记录设置变更
         let changes: [String: String] = [
             "show_countdown": "\(showCountdownInStatusBar)",
+            "pre_break_heads_up_seconds": "\(preBreakLeadTime.rawValue)",
             "custom_mode": "\(isCustomMode)",
             "custom_work_duration": "\(customWorkDuration)",
             "custom_break_duration": "\(customBreakDuration)",
@@ -737,6 +766,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateSkipDelayMenuStates()
         skipDelayItem.submenu = skipDelaySubmenu
         menu.addItem(skipDelayItem)
+
+        let preBreakItem = NSMenuItem(title: localized("preBreakHeadsUp"), action: nil, keyEquivalent: "")
+        let preBreakSubmenu = NSMenu()
+        preBreakLeadTimeMenuItems.removeAll()
+        for option in PreBreakLeadTime.allCases {
+            let item = NSMenuItem(
+                title: preBreakLeadTimeTitle(option),
+                action: #selector(selectPreBreakLeadTime(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = option.rawValue
+            item.state = (preBreakLeadTime == option) ? .on : .off
+            preBreakSubmenu.addItem(item)
+            preBreakLeadTimeMenuItems.append(item)
+        }
+        preBreakItem.submenu = preBreakSubmenu
+        menu.addItem(preBreakItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -1524,6 +1571,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         countdownScheduler.cancel()
         stateSnapshotTimer?.invalidate()
+        dismissPreBreakHUD()
         for overlay in nightLockOverlays {
             overlay.hideOverlay()
         }
@@ -1950,6 +1998,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         print("🌙 进入夜间禁用：\(reason)")
+        dismissPreBreakHUD()
         closeHealthStatsWindowIfNeeded()
         cleanupBreakOverlays()
 
@@ -2150,6 +2199,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         eventRecorder.recordTemporaryDisableStarted(state: state, reason: reason)
 
         countdownScheduler.cancel()
+        dismissPreBreakHUD()
 
         if !breakOverlays.isEmpty {
             cleanupBreakOverlays()
@@ -2258,6 +2308,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func showBreakOverlay() {
         print("🎭 showBreakOverlay 被调用")
+        dismissPreBreakHUD()
 
         if applyNightRestrictionState(reason: "before_break_overlay") {
             rescheduleCountdown()
@@ -2554,6 +2605,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func pauseCurrentSession(reason: String) {
         displaysAreActive = false
         countdownScheduler.cancel()
+        dismissPreBreakHUD()
         logSessionDebug("system_pause_current_session", context: [
             "reason": reason,
             "work_start_time": debugTimestamp(workSessionStartTime),
@@ -2784,7 +2836,137 @@ extension AppDelegate: NSMenuDelegate {
         for overlay in breakOverlays {
             overlay.setLocalizer(localized)
         }
+        preBreakHUDWindow?.setLocalizer(localized)
         refreshNightLockOverlays()
         refreshCountdownDisplayAndTimer()
+    }
+}
+
+extension AppDelegate: PreBreakHUDDelegate {
+    private func preBreakLeadTimeTitle(_ option: PreBreakLeadTime) -> String {
+        switch option {
+        case .off:
+            return localized("preBreakOff")
+        case .seconds10:
+            return localized("preBreakSeconds10")
+        case .seconds20:
+            return localized("preBreakSeconds20")
+        case .seconds30:
+            return localized("preBreakSeconds30")
+        }
+    }
+
+    @objc private func selectPreBreakLeadTime(_ sender: NSMenuItem) {
+        preBreakLeadTime = PreBreakLeadTime.validated(sender.tag)
+        saveSettings()
+        for item in preBreakLeadTimeMenuItems {
+            item.state = (item.tag == preBreakLeadTime.rawValue) ? .on : .off
+        }
+        rescheduleCountdown()
+    }
+
+    private func updatePreBreakHUD(now: Date, status: NightRestrictionStatus) {
+        guard displaysAreActive,
+              !status.isLocked,
+              !isTemporaryDisableActive,
+              breakSessionStartTime == nil,
+              breakOverlays.isEmpty else {
+            dismissPreBreakHUD()
+            return
+        }
+
+        let state: PreBreakHeadsUpState
+        if let postponeStart = postponeStartTime {
+            let remaining = max(0, postponeDuration - now.timeIntervalSince(postponeStart))
+            state = preBreakPolicy.state(
+                remainingTime: remaining,
+                leadTime: preBreakLeadTime,
+                workDurationSeconds: Int(postponeDuration),
+                isWorkOrPostponeActive: true
+            )
+        } else if let workStart = workSessionStartTime {
+            let workDuration = status.effectiveWorkDurationSeconds
+            let remaining = max(0, TimeInterval(workDuration) - now.timeIntervalSince(workStart))
+            state = preBreakPolicy.state(
+                remainingTime: remaining,
+                leadTime: preBreakLeadTime,
+                workDurationSeconds: workDuration,
+                isWorkOrPostponeActive: true
+            )
+        } else {
+            state = .inactive
+        }
+
+        guard case .active(let remainingSeconds) = state else {
+            dismissPreBreakHUD()
+            return
+        }
+
+        let hud: PreBreakHUDWindow
+        if let existing = preBreakHUDWindow {
+            hud = existing
+        } else {
+            let created = PreBreakHUDWindow()
+            created.hudDelegate = self
+            created.setLocalizer(localized)
+            preBreakHUDWindow = created
+            hud = created
+        }
+
+        let canSnooze1 = preBreakPolicy.canSnooze(
+            minutes: 1,
+            totalPostponedTime: totalPostponedTime,
+            maxTotalPostponeTime: maxTotalPostponeTime
+        )
+        let canSnooze5 = preBreakPolicy.canSnooze(
+            minutes: 5,
+            totalPostponedTime: totalPostponedTime,
+            maxTotalPostponeTime: maxTotalPostponeTime
+        )
+        hud.showHUD(remainingSeconds: remainingSeconds, canSnooze1Min: canSnooze1, canSnooze5Min: canSnooze5)
+    }
+
+    private func dismissPreBreakHUD() {
+        preBreakHUDWindow?.dismissHUD()
+    }
+
+    func didRequestPreBreakSnooze(minutes: Int) {
+        guard preBreakPolicy.snooze(
+            minutes: minutes,
+            totalPostponedTime: totalPostponedTime,
+            maxTotalPostponeTime: maxTotalPostponeTime
+        ) != nil else {
+            return
+        }
+
+        dismissPreBreakHUD()
+
+        let postponeSeconds = TimeInterval(minutes * 60)
+        totalPostponedTime += postponeSeconds
+        eventRecorder.recordPostpone(minutes: minutes)
+
+        countdownScheduler.cancel()
+        if let startTime = workSessionStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            logManager.logWorkPaused(duration: elapsed, reason: "pre_break_snooze_\(minutes)min")
+        }
+
+        workSessionStartTime = nil
+        breakSessionStartTime = nil
+        postponeStartTime = Date()
+        postponeDuration = postponeSeconds
+
+        logManager.logWorkStarted(mode: "postponed_\(minutes)min")
+        updateStatusBarTitle()
+        updateMenuTimer()
+        saveCurrentSessionState()
+        rescheduleCountdown()
+    }
+
+    func didRequestPreBreakSkip() {
+        _ = preBreakPolicy.skip()
+        dismissPreBreakHUD()
+        logManager.logEvent(.breakSkipped, context: ["reason": "pre_break_skip"])
+        restartWorkTimer()
     }
 }
