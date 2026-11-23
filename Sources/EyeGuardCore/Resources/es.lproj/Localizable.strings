@@ -178,3 +178,15 @@
 "smartPauseMenuWaitingInput" = "Esperando: Escribiendo o arrastrando";
 "smartPauseMenuWaitingTyping" = "Esperando: Escritura en curso";
 "smartPauseMenuWaitingDragging" = "Esperando: Arrastre en curso";
+"smartPauseFullscreenEnabled" = "Pausar en apps a pantalla completa";
+"smartPauseDeepFocusApps" = "Apps de enfoque profundo";
+"smartPauseNoDeepFocusApps" = "Sin apps de enfoque profundo";
+"smartPauseDeepFocusModeFrontmost" = "En primer plano";
+"smartPauseDeepFocusModeOpen" = "Cuando esté abierta";
+"smartPauseDeepFocusRemove" = "Eliminar";
+"smartPauseAddDeepFocusTitle" = "Añadir app de enfoque profundo";
+"smartPauseAddDeepFocusMessage" = "Introduce el nombre de la app (p. ej., Xcode) o el ID de paquete (p. ej., com.apple.dt.Xcode):";
+"smartPauseMenuFullscreen" = "En pausa: App a pantalla completa";
+"smartPauseMenuFullscreenFormat" = "En pausa: App a pantalla completa (%@)";
+"smartPauseMenuDeepFocus" = "En pausa: Enfoque profundo";
+"smartPauseMenuDeepFocusFormat" = "En pausa: Enfoque profundo (%@)";

@@ -178,3 +178,15 @@
 "smartPauseMenuWaitingInput" = "等待中：正在输入或拖拽";
 "smartPauseMenuWaitingTyping" = "等待中：正在键盘输入";
 "smartPauseMenuWaitingDragging" = "等待中：正在拖拽鼠标";
+"smartPauseFullscreenEnabled" = "全屏应用时暂停";
+"smartPauseDeepFocusApps" = "深度专注应用";
+"smartPauseNoDeepFocusApps" = "无深度专注应用";
+"smartPauseDeepFocusModeFrontmost" = "处于前台时";
+"smartPauseDeepFocusModeOpen" = "打开时";
+"smartPauseDeepFocusRemove" = "移除";
+"smartPauseAddDeepFocusTitle" = "添加深度专注应用";
+"smartPauseAddDeepFocusMessage" = "输入应用名称（例如 Xcode）或 Bundle ID（例如 com.apple.dt.Xcode）：";
+"smartPauseMenuFullscreen" = "已暂停：全屏应用";
+"smartPauseMenuFullscreenFormat" = "已暂停：全屏应用 (%@)";
+"smartPauseMenuDeepFocus" = "已暂停：深度专注";
+"smartPauseMenuDeepFocusFormat" = "已暂停：深度专注 (%@)";

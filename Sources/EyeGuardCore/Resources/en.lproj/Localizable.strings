@@ -178,3 +178,15 @@
 "smartPauseMenuWaitingInput" = "Waiting: Typing or dragging";
 "smartPauseMenuWaitingTyping" = "Waiting: Typing in progress";
 "smartPauseMenuWaitingDragging" = "Waiting: Mouse drag in progress";
+"smartPauseFullscreenEnabled" = "Pause in Fullscreen Apps";
+"smartPauseDeepFocusApps" = "Deep Focus Apps";
+"smartPauseNoDeepFocusApps" = "No Deep Focus Apps";
+"smartPauseDeepFocusModeFrontmost" = "When Frontmost";
+"smartPauseDeepFocusModeOpen" = "When Open";
+"smartPauseDeepFocusRemove" = "Remove";
+"smartPauseAddDeepFocusTitle" = "Add Deep Focus App";
+"smartPauseAddDeepFocusMessage" = "Enter an app name (e.g. Xcode) or bundle identifier (e.g. com.apple.dt.Xcode):";
+"smartPauseMenuFullscreen" = "Paused: Fullscreen App";
+"smartPauseMenuFullscreenFormat" = "Paused: Fullscreen App (%@)";
+"smartPauseMenuDeepFocus" = "Paused: Deep Focus";
+"smartPauseMenuDeepFocusFormat" = "Paused: Deep Focus (%@)";

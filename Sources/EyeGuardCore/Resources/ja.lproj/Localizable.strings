@@ -178,3 +178,15 @@
 "smartPauseMenuWaitingInput" = "待機中: 入力またはドラッグ中";
 "smartPauseMenuWaitingTyping" = "待機中: キーボード入力中";
 "smartPauseMenuWaitingDragging" = "待機中: マウスドラッグ中";
+"smartPauseFullscreenEnabled" = "フルスクリーンアプリで一時停止";
+"smartPauseDeepFocusApps" = "ディープフォーカスアプリ";
+"smartPauseNoDeepFocusApps" = "ディープフォーカスアプリなし";
+"smartPauseDeepFocusModeFrontmost" = "最前面のとき";
+"smartPauseDeepFocusModeOpen" = "起動中のとき";
+"smartPauseDeepFocusRemove" = "削除";
+"smartPauseAddDeepFocusTitle" = "ディープフォーカスアプリを追加";
+"smartPauseAddDeepFocusMessage" = "アプリ名（例: Xcode）またはバンドルID（例: com.apple.dt.Xcode）を入力してください:";
+"smartPauseMenuFullscreen" = "一時停止中: フルスクリーンアプリ";
+"smartPauseMenuFullscreenFormat" = "一時停止中: フルスクリーンアプリ (%@)";
+"smartPauseMenuDeepFocus" = "一時停止中: ディープフォーカス";
+"smartPauseMenuDeepFocusFormat" = "一時停止中: ディープフォーカス (%@)";
