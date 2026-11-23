@@ -7,8 +7,17 @@
     "email": "javen.out@gmail.com",
     "github": "JavenGroup/TwentyGuard"
   },
-  "current_version": "1.0",
+  "current_version": "2.0",
   "versions": [
+    {
+      "version": "2.0",
+      "date": "2026-11-23",
+      "changes": [
+        "Added fixed-time planned breaks with custom names, start times, durations, weekdays, overlapping interval suppression, Smart Pause deferral, and away-time crediting",
+        "Added Apple Calendar-event-driven breaks with calendar binding, optional title filtering, postpone end-time retention, missing-calendar resilience, and sleep/wake recovery",
+        "Added on-demand manual breaks with quick duration picker (2m, 5m, 10m, 15m, custom), reusable saved presets, Manual-Only Mode, and clean background interval timer restoration/reset"
+      ]
+    },
     {
       "version": "1.0",
       "date": "2026-11-23",
