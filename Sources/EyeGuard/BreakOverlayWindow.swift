@@ -20,6 +20,7 @@ class BreakOverlayWindow: NSWindow {
     private var postponeStatusLabel: NSTextField!  // 底部状态提示标签
     private var nightWindDownHint: String?
     private var plannedBreakTitle: String?
+    private var breakOverlayFormatKey: String = "plannedBreakOverlayFormat"
     private var currentSkipState: BreakSkipState = .hidden
 
     // Localization closure
@@ -388,8 +389,13 @@ class BreakOverlayWindow: NSWindow {
     }
 
     func configurePlannedBreak(name: String?) {
-        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        configureNamedBreak(title: name, formatKey: "plannedBreakOverlayFormat")
+    }
+
+    func configureNamedBreak(title: String?, formatKey: String = "plannedBreakOverlayFormat") {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines)
         plannedBreakTitle = (trimmed?.isEmpty == false) ? trimmed : nil
+        breakOverlayFormatKey = formatKey
         updateTexts()
     }
     
@@ -477,7 +483,7 @@ class BreakOverlayWindow: NSWindow {
         if let mainContainer = contentView?.subviews.first(where: { $0.layer?.cornerRadius == 20 }) {
             if let titleLabel = mainContainer.subviews.first(where: { $0 is NSTextField }) as? NSTextField {
                 if let plannedBreakTitle {
-                    titleLabel.stringValue = String(format: localizer("plannedBreakOverlayFormat"), plannedBreakTitle)
+                    titleLabel.stringValue = String(format: localizer(breakOverlayFormatKey), plannedBreakTitle)
                 } else {
                     titleLabel.stringValue = localizer("breakOverlayTitle")
                 }

@@ -244,6 +244,43 @@ final class AppLocalizationTests: XCTestCase {
         }
     }
 
+    func testManualBreakLocalizationsAreComplete() {
+        let requiredKeys: Set<String> = [
+            "manualBreakMenuTitle",
+            "manualBreakQuickDurationFormat",
+            "manualBreakCustomDurationMenu",
+            "manualBreakPresetsHeader",
+            "manualBreakNoPresets",
+            "manualBreakAddPreset",
+            "manualBreakPresetStart",
+            "manualBreakPresetEdit",
+            "manualBreakPresetDelete",
+            "manualBreakPresetMenuItemFormat",
+            "manualBreakManualOnlyMode",
+            "manualBreakStatusBar",
+            "manualBreakMenuIdleStatus",
+            "manualBreakDefaultTitle",
+            "manualBreakOverlayFormat",
+            "manualBreakCustomTitle",
+            "manualBreakCustomMessage",
+            "manualBreakPresetCreateTitle",
+            "manualBreakPresetEditTitle",
+            "manualBreakPresetNameLabel",
+            "manualBreakPresetNamePlaceholder",
+            "manualBreakDurationMinutesLabel",
+            "manualBreakDurationSecondsLabel",
+            "manualBreakSaveAsPresetCheckbox",
+            "manualBreakStartButton",
+            "manualBreakSaveButton",
+            "manualBreakCancelButton"
+        ]
+
+        for language in AppLocalization.supportedLanguageCodes {
+            let keys = AppLocalization.localizationKeys(language: language)
+            XCTAssertTrue(requiredKeys.isSubset(of: keys), "\(language) must include all manual break keys")
+        }
+    }
+
     func testFindsCoreResourceBundleInStandardAppResourcesDirectory() throws {
         let appURL = temporaryDirectory()
             .appendingPathComponent("EyeGuard.app", isDirectory: true)
