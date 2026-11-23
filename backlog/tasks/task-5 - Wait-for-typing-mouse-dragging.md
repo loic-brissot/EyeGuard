@@ -1,10 +1,10 @@
 ---
 id: TASK-5
 title: Wait for typing & mouse dragging
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
-updated_date: '2026-11-23T16:31:00Z'
+updated_date: '2026-11-23T19:00:00Z'
 labels:
   - smart-pause
 milestone: m-1
@@ -22,7 +22,7 @@ Defer a due break overlay until the user finishes typing or releases an active m
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Due breaks wait for a brief idle-input grace window after the last keystroke or drag release
-- [ ] #2 Toggleable in preferences with a bounded maximum wait threshold
-- [ ] #3 Unit tests verify deferral and trigger timing using injectable input-activity state
+- [x] #1 Due breaks wait for a brief idle-input grace window after the last keystroke or drag release
+- [x] #2 Toggleable in preferences with a bounded maximum wait threshold
+- [x] #3 Unit tests verify deferral and trigger timing using injectable input-activity state
 <!-- AC:END -->

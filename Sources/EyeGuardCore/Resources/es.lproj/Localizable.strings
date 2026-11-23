@@ -169,3 +169,12 @@
 "smartPauseStatusBar" = "En pausa";
 "smartPauseMenuMeeting" = "En pausa: En una reunión/llamada";
 "smartPauseMenuMeetingFormat" = "En pausa: En una reunión/llamada (%@)";
+"smartPauseWaitForInputEnabled" = "Esperar al escribir o arrastrar";
+"smartPauseMaxWait" = "Espera máxima";
+"smartPauseMaxWait30" = "30 s";
+"smartPauseMaxWait60" = "1 min";
+"smartPauseMaxWait120" = "2 min";
+"smartPauseWaitingStatusBar" = "Esperando";
+"smartPauseMenuWaitingInput" = "Esperando: Escribiendo o arrastrando";
+"smartPauseMenuWaitingTyping" = "Esperando: Escritura en curso";
+"smartPauseMenuWaitingDragging" = "Esperando: Arrastre en curso";
