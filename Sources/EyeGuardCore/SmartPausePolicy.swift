@@ -95,6 +95,7 @@ public struct SmartPausePolicy: Sendable {
         screenCaptureSnapshot: ScreenCaptureSnapshot = .inactive,
         meetingSettings: MeetingAutoPauseSettings,
         calendarSettings: CalendarPauseSettings = CalendarPauseSettings(),
+        calendarBreakSettings: CalendarBreakSettings = CalendarBreakSettings(),
         calendarSnapshot: CalendarSnapshot = .empty,
         focusAppSettings: FocusAppPauseSettings,
         idleSettings: IdleNaturalBreakSettings = IdleNaturalBreakSettings(),
@@ -124,7 +125,8 @@ public struct SmartPausePolicy: Sendable {
         let calendarEvaluation = calendarPolicy.evaluate(
             settings: calendarSettings,
             snapshot: calendarSnapshot,
-            now: now
+            now: now,
+            excludedBreakSettings: calendarBreakSettings
         )
         if calendarEvaluation.isPaused {
             return calendarEvaluation

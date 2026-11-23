@@ -1,10 +1,10 @@
 ---
 id: TASK-11
 title: Calendar-event-driven breaks
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
-updated_date: '2026-11-23T16:31:00Z'
+updated_date: '2026-11-23T19:55:00Z'
 labels:
   - scheduling
   - calendar
@@ -23,7 +23,7 @@ Allow triggering scheduled breaks directly from matching Apple Calendar events (
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Users can bind a break schedule to a selected Apple Calendar and optional title filter
-- [ ] #2 Break starts at event start time, spans event duration, and retains original end time if postponed
-- [ ] #3 Handles missing/synced calendars and sleep/wake recovery cleanly with unit test coverage
+- [x] #1 Users can bind a break schedule to a selected Apple Calendar and optional title filter
+- [x] #2 Break starts at event start time, spans event duration, and retains original end time if postponed
+- [x] #3 Handles missing/synced calendars and sleep/wake recovery cleanly with unit test coverage
 <!-- AC:END -->

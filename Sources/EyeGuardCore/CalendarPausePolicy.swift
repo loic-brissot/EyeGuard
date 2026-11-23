@@ -129,13 +129,20 @@ public struct CalendarPausePolicy: Sendable {
     public func qualifyingEvents(
         settings: CalendarPauseSettings,
         snapshot: CalendarSnapshot,
-        now: Date = Date()
+        now: Date = Date(),
+        excludedBreakSettings: CalendarBreakSettings? = nil
     ) -> [CalendarEventItem] {
         guard settings.isEnabled, snapshot.permissionState == .authorized else {
             return []
         }
 
+        let breakPolicy = CalendarBreakPolicy()
         return snapshot.activeEvents.filter { event in
+            if let excludedBreakSettings,
+               excludedBreakSettings.isEnabled,
+               breakPolicy.matches(event: event, settings: excludedBreakSettings) {
+                return false
+            }
             guard !event.isAllDay else { return false }
             guard !event.isCanceled else { return false }
             guard event.availability == .busy else { return false }
@@ -150,9 +157,15 @@ public struct CalendarPausePolicy: Sendable {
     public func evaluate(
         settings: CalendarPauseSettings,
         snapshot: CalendarSnapshot,
-        now: Date = Date()
+        now: Date = Date(),
+        excludedBreakSettings: CalendarBreakSettings? = nil
     ) -> SmartPauseEvaluation {
-        let active = qualifyingEvents(settings: settings, snapshot: snapshot, now: now)
+        let active = qualifyingEvents(
+            settings: settings,
+            snapshot: snapshot,
+            now: now,
+            excludedBreakSettings: excludedBreakSettings
+        )
         guard let selectedEvent = active.sorted(by: { lhs, rhs in
             if lhs.endDate != rhs.endDate {
                 return lhs.endDate > rhs.endDate

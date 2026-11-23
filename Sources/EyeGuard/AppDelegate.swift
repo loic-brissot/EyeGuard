@@ -35,6 +35,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let settings = "plannedBreakSettings"
     }
 
+    private enum CalendarBreakDefaults {
+        static let settings = "calendarBreakSettings"
+    }
+
     private enum SmartPauseDefaults {
         static let screenCaptureEnabled = "smartPauseScreenCaptureEnabled"
         static let meetingAutoPauseEnabled = "smartPauseMeetingAutoPauseEnabled"
@@ -131,6 +135,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeBreakDurationOverrideSeconds: Int?
     private var plannedBreaksMenuItem: NSMenuItem!
     private var awayStartedAtForPlannedBreak: Date?
+
+    // Calendar-event-driven breaks settings & runtime state
+    private let calendarBreakPolicy = CalendarBreakPolicy()
+    private var calendarBreakSettings = CalendarBreakSettings()
+    private var calendarBreakState = CalendarBreakRuntimeState()
+    private var activeCalendarBreakOccurrence: CalendarBreakOccurrence?
+    private var calendarBreaksMenuItem: NSMenuItem!
 
     // Night restriction settings
     private var nightPolicy = NightRestrictionPolicy()
@@ -266,6 +277,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         calendarEventMonitor.onUpdate = { [weak self] _ in
             self?.evaluateSmartPause()
+            self?.rescheduleCountdown()
         }
         focusAppMonitor.onUpdate = { [weak self] _ in
             self?.evaluateSmartPause()
@@ -275,7 +287,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         screenCaptureMonitor.start()
         meetingCallMonitor.start()
-        calendarEventMonitor.start()
+        syncCalendarEventMonitorState()
         focusAppMonitor.start()
         idleMonitor.start()
         schedulingReady = true
@@ -556,12 +568,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             preBreakLeadTimeSeconds = 0
         }
         let plannedBreakTransition: Date?
+        let calendarBreakTransition: Date?
         if status.isLocked || isTemporaryDisableActive || breakSessionStartTime != nil {
             plannedBreakTransition = nil
+            calendarBreakTransition = nil
         } else {
             plannedBreakTransition = plannedBreakPolicy.nextBoundary(
                 settings: plannedBreakSettings,
                 state: plannedBreakState,
+                now: now
+            )
+            calendarBreakTransition = calendarBreakPolicy.nextBoundary(
+                settings: calendarBreakSettings,
+                snapshot: calendarEventMonitor.lastSnapshot,
+                state: calendarBreakState,
                 now: now
             )
         }
@@ -570,6 +590,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             nightTransition: nightPolicy.nextTransition(after: now, status: status, isEnabled: nightRestrictionSettings.isEnabled),
             overrideUntil: nightOverrideState?.until,
             plannedBreakTransition: plannedBreakTransition,
+            calendarBreakTransition: calendarBreakTransition,
             showStatusCountdown: showCountdownInStatusBar,
             menuIsOpen: menuIsOpen, displaysAreActive: displaysAreActive,
             preBreakLeadTimeSeconds: preBreakLeadTimeSeconds
@@ -629,6 +650,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             _ = applyNightRestrictionState(reason: "scheduled_while_paused")
         } else if evaluatePlannedBreaks(now: Date()) {
             // Planned break evaluation handled the deadline
+        } else if evaluateCalendarBreaks(now: Date()) {
+            // Calendar break evaluation handled the deadline
         } else if postponeStartTime != nil {
             updatePostponeTimer()
         } else if breakSessionStartTime != nil {
@@ -821,6 +844,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             plannedBreakSettings = PlannedBreakSettings()
         }
 
+        if let calendarBreakData = UserDefaults.standard.data(forKey: CalendarBreakDefaults.settings),
+           let decodedCalendarBreaks = try? JSONDecoder().decode(CalendarBreakSettings.self, from: calendarBreakData) {
+            calendarBreakSettings = decodedCalendarBreaks
+        } else {
+            calendarBreakSettings = CalendarBreakSettings()
+        }
+
         // Apply the loaded settings
         if isCustomMode {
             currentWorkDuration = customWorkDuration
@@ -864,6 +894,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let encodedPlannedBreaks = try? JSONEncoder().encode(plannedBreakSettings) {
             UserDefaults.standard.set(encodedPlannedBreaks, forKey: PlannedBreakDefaults.settings)
         }
+        if let encodedCalendarBreaks = try? JSONEncoder().encode(calendarBreakSettings) {
+            UserDefaults.standard.set(encodedCalendarBreaks, forKey: CalendarBreakDefaults.settings)
+        }
 
         // 记录设置变更
         let changes: [String: String] = [
@@ -893,7 +926,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "smart_pause_wait_for_input_max_seconds": "\(Int(inputDeferralSettings.maxWaitThreshold))",
             "smart_pause_idle_enabled": "\(idleNaturalBreakSettings.isEnabled)",
             "smart_pause_idle_threshold_seconds": "\(Int(idleNaturalBreakSettings.idlePauseThreshold))",
-            "planned_breaks_count": "\(plannedBreakSettings.schedules.count)"
+            "planned_breaks_count": "\(plannedBreakSettings.schedules.count)",
+            "calendar_breaks_enabled": "\(calendarBreakSettings.isEnabled)",
+            "calendar_breaks_has_calendar": "\(calendarBreakSettings.selectedCalendarID != nil)",
+            "calendar_breaks_has_filter": "\(!calendarBreakSettings.trimmedTitleFilter.isEmpty)"
         ]
         eventRecorder.recordSettingsChange(changes: changes)
     }
@@ -940,6 +976,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         setupModeMenu()
         setupPlannedBreaksMenu()
+        setupCalendarBreaksMenu()
         setupNightRestrictionMenu()
         setupSmartPauseMenu()
         
@@ -2584,11 +2621,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if !bypassInputDeferral, activePlannedBreakOccurrence == nil, shouldDeferBreakForInputActivity() {
+        if !bypassInputDeferral, activePlannedBreakOccurrence == nil, activeCalendarBreakOccurrence == nil, shouldDeferBreakForInputActivity() {
             return
         }
 
-        if activePlannedBreakOccurrence == nil {
+        if activePlannedBreakOccurrence == nil && activeCalendarBreakOccurrence == nil {
             let now = Date()
             let evaluation = plannedBreakPolicy.evaluate(
                 settings: plannedBreakSettings,
@@ -2619,6 +2656,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
             }
+
+            if activePlannedBreakOccurrence == nil {
+                let calendarEvaluation = calendarBreakPolicy.evaluate(
+                    settings: calendarBreakSettings,
+                    snapshot: calendarEventMonitor.lastSnapshot,
+                    state: calendarBreakState,
+                    now: now,
+                    smartPauseEvaluation: smartPauseEvaluation,
+                    isNightLocked: currentNightStatus(now: now).isLocked,
+                    isTemporarilyDisabled: isTemporaryDisableActive
+                )
+                calendarBreakState = calendarEvaluation.nextState
+                switch calendarEvaluation.decision {
+                case .trigger(let occurrence, let remainingSeconds),
+                     .resumePostponed(let occurrence, let remainingSeconds):
+                    activeCalendarBreakOccurrence = occurrence
+                    calendarBreakState.activeOccurrence = occurrence
+                    activeBreakDurationOverrideSeconds = remainingSeconds
+                case .deferredBySmartPause, .creditedAway, .expired, .activeEventRemoved, .none:
+                    if calendarEvaluation.shouldSuppressRegularBreak {
+                        cancelInputDeferral()
+                        workSessionStartTime = nil
+                        postponeStartTime = nil
+                        postponeDuration = 0
+                        logSessionDebug("regular_break_suppressed_by_calendar_break", context: [
+                            "calendar_break": calendarEvaluation.suppressedByOccurrence?.title ?? "unknown"
+                        ])
+                        updateStatusBarTitle(now: now)
+                        updateMenuTimer(now: now)
+                        rescheduleCountdown()
+                        return
+                    }
+                }
+            }
         }
 
         cancelInputDeferral()
@@ -2638,6 +2709,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let active = activePlannedBreakOccurrence {
                 plannedBreakState.markHandled(active, status: .expired)
                 activePlannedBreakOccurrence = nil
+                activeBreakDurationOverrideSeconds = nil
+            }
+            if let activeCalendar = activeCalendarBreakOccurrence {
+                calendarBreakState.markHandled(activeCalendar, status: .expired)
+                activeCalendarBreakOccurrence = nil
                 activeBreakDurationOverrideSeconds = nil
             }
             // 屏幕不可用，延迟1秒后重新开始工作会话
@@ -2668,7 +2744,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let overlay = BreakOverlayWindow(screen: screen)
             overlay.breakDelegate = self
             overlay.setLocalizer(localized)
-            overlay.configurePlannedBreak(name: activePlannedBreakOccurrence?.schedule.name)
+            let breakTitle: String?
+            if let planned = activePlannedBreakOccurrence {
+                breakTitle = planned.schedule.name
+            } else if let calendarOccurrence = activeCalendarBreakOccurrence {
+                breakTitle = calendarOccurrence.title.isEmpty
+                    ? localized("calendarBreakDefaultTitle")
+                    : calendarOccurrence.title
+            } else {
+                breakTitle = nil
+            }
+            overlay.configurePlannedBreak(name: breakTitle)
             overlay.updateCountdown(Int(breakTimeRemaining))
 
             // 更新推迟状态显示
@@ -2748,6 +2834,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             activePlannedBreakOccurrence = nil
             activeBreakDurationOverrideSeconds = nil
         }
+        if let activeCalendar = activeCalendarBreakOccurrence {
+            calendarBreakState.markHandled(activeCalendar, status: .completed)
+            activeCalendarBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+        }
 
         // 记录休息完成到数据库
         eventRecorder.endBreakSession()
@@ -2779,6 +2870,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let active = activePlannedBreakOccurrence {
             plannedBreakState.markHandled(active, status: .completed)
             activePlannedBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+        }
+        if let activeCalendar = activeCalendarBreakOccurrence {
+            calendarBreakState.markHandled(activeCalendar, status: .skipped)
+            activeCalendarBreakOccurrence = nil
             activeBreakDurationOverrideSeconds = nil
         }
         eventRecorder.skipBreakSession(
@@ -2847,12 +2943,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         breakSessionStartTime = nil
 
+        let now = Date()
+        let postponeInterval = TimeInterval(minutes * 60)
+        if let activeCalendar = activeCalendarBreakOccurrence {
+            calendarBreakState.postpone(activeCalendar, until: now.addingTimeInterval(postponeInterval))
+            activeCalendarBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+        }
+
         // 更新所有休息窗口的推迟状态显示（如果有的话）
         updateBreakOverlaysPostponeStatus()
         
         // 开始推迟计时器 - 不修改原始工作时长设置
-        postponeStartTime = Date()
-        postponeDuration = TimeInterval(minutes * 60)
+        postponeStartTime = now
+        postponeDuration = postponeInterval
         
         // 保持原始工作时长不变，不保存临时状态到会话文件
         logManager.logWorkStarted(mode: "postponed_\(minutes)min")
@@ -2935,6 +3039,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             activePlannedBreakOccurrence = nil
             activeBreakDurationOverrideSeconds = nil
             plannedBreakState.activeOccurrence = nil
+        }
+        if activeCalendarBreakOccurrence != nil {
+            activeCalendarBreakOccurrence = nil
+            activeBreakDurationOverrideSeconds = nil
+            calendarBreakState.activeOccurrence = nil
         }
         smartPauseSnapshot = nil
         cancelInputDeferral()
@@ -3030,6 +3139,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "reason": reason
         ])
         if evaluatePlannedBreaks(now: resumeNow, awayInterval: awayInterval) {
+            return
+        }
+        if evaluateCalendarBreaks(now: resumeNow, awayInterval: awayInterval) {
             return
         }
         restartWorkTimer()
@@ -3142,6 +3254,7 @@ extension AppDelegate: NSMenuDelegate {
         updateTemporaryDisableMenuItem()
         updateModeMenuStates()
         rebuildPlannedBreaksMenu()
+        rebuildCalendarBreaksMenu()
         rebuildNightRestrictionMenu()
         rebuildSmartPauseMenu()
         startMenuUpdateTimer()
@@ -3806,27 +3919,40 @@ extension AppDelegate {
         evaluateSmartPause(refreshSnapshots: true)
     }
 
+    private func syncCalendarEventMonitorState() {
+        if calendarPauseSettings.isEnabled || calendarBreakSettings.isEnabled {
+            calendarEventMonitor.start()
+        } else {
+            calendarEventMonitor.stop()
+        }
+    }
+
     @objc private func toggleCalendarPause() {
         let nextEnabled = !calendarPauseSettings.isEnabled
         calendarPauseSettings.isEnabled = nextEnabled
         saveSettings()
+        syncCalendarEventMonitorState()
 
         if nextEnabled && calendarEventMonitor.currentSnapshot().permissionState == .notDetermined {
             calendarEventMonitor.requestAccess { [weak self] _ in
                 self?.rebuildSmartPauseMenu()
+                self?.rebuildCalendarBreaksMenu()
                 self?.evaluateSmartPause(refreshSnapshots: true)
             }
             return
         }
 
         rebuildSmartPauseMenu()
+        rebuildCalendarBreaksMenu()
         evaluateSmartPause(refreshSnapshots: true)
     }
 
     @objc private func requestCalendarAccess() {
         calendarEventMonitor.requestAccess { [weak self] _ in
             self?.rebuildSmartPauseMenu()
+            self?.rebuildCalendarBreaksMenu()
             self?.evaluateSmartPause(refreshSnapshots: true)
+            self?.rescheduleCountdown()
         }
     }
 
@@ -4172,6 +4298,7 @@ extension AppDelegate {
             screenCaptureSnapshot: screenCaptureSnapshot,
             meetingSettings: meetingAutoPauseSettings,
             calendarSettings: calendarPauseSettings,
+            calendarBreakSettings: calendarBreakSettings,
             calendarSnapshot: calendarSnapshot,
             focusAppSettings: focusAppPauseSettings,
             idleSettings: IdleNaturalBreakSettings(isEnabled: false),
@@ -4211,6 +4338,7 @@ extension AppDelegate {
             screenCaptureSnapshot: screenCaptureSnapshot,
             meetingSettings: meetingAutoPauseSettings,
             calendarSettings: calendarPauseSettings,
+            calendarBreakSettings: calendarBreakSettings,
             calendarSnapshot: calendarSnapshot,
             focusAppSettings: focusAppPauseSettings,
             idleSettings: effectiveIdleSettings,
@@ -4229,6 +4357,7 @@ extension AppDelegate {
             awayInterval = nil
         }
         _ = evaluatePlannedBreaks(now: now, awayInterval: awayInterval)
+        _ = evaluateCalendarBreaks(now: now, awayInterval: awayInterval)
     }
 
     private func applySmartPauseEvaluation(_ nextEvaluation: SmartPauseEvaluation) {
@@ -4271,6 +4400,16 @@ extension AppDelegate {
             eventRecorder.endBreakSession()
             cleanupBreakOverlays()
             breakSessionStartTime = nil
+            if activePlannedBreakOccurrence != nil {
+                activePlannedBreakOccurrence = nil
+                plannedBreakState.activeOccurrence = nil
+                activeBreakDurationOverrideSeconds = nil
+            }
+            if activeCalendarBreakOccurrence != nil {
+                activeCalendarBreakOccurrence = nil
+                calendarBreakState.activeOccurrence = nil
+                activeBreakDurationOverrideSeconds = nil
+            }
             if isSkippingCalendarBreakActive {
                 workSessionStartTime = nil
                 postponeStartTime = nil
@@ -4664,6 +4803,312 @@ extension AppDelegate {
         saveSettings()
         rebuildPlannedBreaksMenu()
         _ = evaluatePlannedBreaks()
+        rescheduleCountdown()
+    }
+
+    // MARK: - Calendar Breaks
+
+    @discardableResult
+    private func evaluateCalendarBreaks(now: Date = Date(), awayInterval: DateInterval? = nil) -> Bool {
+        guard displaysAreActive else { return false }
+        let status = currentNightStatus(now: now)
+        let snapshot = calendarEventMonitor.lastSnapshot
+        let evaluation = calendarBreakPolicy.evaluate(
+            settings: calendarBreakSettings,
+            snapshot: snapshot,
+            state: calendarBreakState,
+            now: now,
+            smartPauseEvaluation: smartPauseEvaluation,
+            awayInterval: awayInterval,
+            isNightLocked: status.isLocked,
+            isTemporarilyDisabled: isTemporaryDisableActive
+        )
+        calendarBreakState = evaluation.nextState
+
+        // Remember the latest calendar title if it's currently visible.
+        if let selectedID = calendarBreakSettings.selectedCalendarID,
+           let matchedCalendar = snapshot.availableCalendars.first(where: { $0.id == selectedID }),
+           calendarBreakSettings.selectedCalendarTitle != matchedCalendar.title {
+            calendarBreakSettings.selectedCalendarTitle = matchedCalendar.title
+        }
+
+        switch evaluation.decision {
+        case .trigger(let occurrence, let remainingSeconds),
+             .resumePostponed(let occurrence, let remainingSeconds):
+            triggerCalendarBreak(occurrence, remainingSeconds: remainingSeconds)
+            return true
+        case .creditedAway(let occurrence):
+            logSessionDebug("calendar_break_credited_away", context: [
+                "title": occurrence.title
+            ])
+            startWorkTimer(forceFreshSession: true)
+            return true
+        case .deferredBySmartPause(let occurrence, let reason):
+            logSessionDebug("calendar_break_deferred_smart_pause", context: [
+                "title": occurrence.title,
+                "reason": "\(String(describing: reason))"
+            ])
+            return false
+        case .expired(let occurrence):
+            logSessionDebug("calendar_break_expired", context: [
+                "title": occurrence.title
+            ])
+            if postponeStartTime != nil {
+                postponeStartTime = nil
+                postponeDuration = 0
+                startWorkTimer(forceFreshSession: true)
+                return true
+            }
+            return false
+        case .activeEventRemoved(let occurrence):
+            logSessionDebug("calendar_break_event_removed", context: [
+                "title": occurrence.title
+            ])
+            if activeCalendarBreakOccurrence?.occurrenceKey == occurrence.occurrenceKey {
+                activeCalendarBreakOccurrence = nil
+                activeBreakDurationOverrideSeconds = nil
+                if breakSessionStartTime != nil {
+                    countdownScheduler.cancel()
+                    cleanupBreakOverlays()
+                    breakSessionStartTime = nil
+                    eventRecorder.endBreakSession()
+                    startWorkTimer(forceFreshSession: true)
+                    return true
+                }
+            } else if postponeStartTime != nil {
+                postponeStartTime = nil
+                postponeDuration = 0
+                startWorkTimer(forceFreshSession: true)
+                return true
+            }
+            return false
+        case .none:
+            return false
+        }
+    }
+
+    private func triggerCalendarBreak(_ occurrence: CalendarBreakOccurrence, remainingSeconds: Int) {
+        postponeStartTime = nil
+        postponeDuration = 0
+        activeCalendarBreakOccurrence = occurrence
+        calendarBreakState.activeOccurrence = occurrence
+        activeBreakDurationOverrideSeconds = max(1, remainingSeconds)
+        logSessionDebug("calendar_break_triggered", context: [
+            "title": occurrence.title,
+            "duration_seconds": "\(activeBreakDurationOverrideSeconds ?? occurrence.durationSeconds)"
+        ])
+        showBreakOverlay(bypassInputDeferral: true)
+    }
+
+    private func setupCalendarBreaksMenu() {
+        calendarBreaksMenuItem = NSMenuItem(title: localized("calendarBreaks"), action: nil, keyEquivalent: "")
+        calendarBreaksMenuItem.submenu = buildCalendarBreaksSubmenu()
+        menu.addItem(calendarBreaksMenuItem)
+    }
+
+    private func rebuildCalendarBreaksMenu() {
+        guard calendarBreaksMenuItem != nil else { return }
+        calendarBreaksMenuItem.title = localized("calendarBreaks")
+        calendarBreaksMenuItem.submenu = buildCalendarBreaksSubmenu()
+    }
+
+    private func buildCalendarBreaksSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let snapshot = calendarEventMonitor.currentSnapshot()
+
+        let enabledItem = NSMenuItem(
+            title: localized("calendarBreaksEnabled"),
+            action: #selector(toggleCalendarBreaks),
+            keyEquivalent: ""
+        )
+        enabledItem.target = self
+        enabledItem.state = calendarBreakSettings.isEnabled ? .on : .off
+        submenu.addItem(enabledItem)
+
+        switch snapshot.permissionState {
+        case .notDetermined:
+            let grantItem = NSMenuItem(
+                title: localized("smartPauseCalendarGrantAccess"),
+                action: #selector(requestCalendarAccess),
+                keyEquivalent: ""
+            )
+            grantItem.target = self
+            submenu.addItem(grantItem)
+        case .denied, .restricted:
+            submenu.addItem(disabledMenuItem(localized("smartPauseCalendarPermissionDenied")))
+            let settingsItem = NSMenuItem(
+                title: localized("smartPauseCalendarOpenSettings"),
+                action: #selector(openCalendarSettings),
+                keyEquivalent: ""
+            )
+            settingsItem.target = self
+            submenu.addItem(settingsItem)
+        case .authorized:
+            break
+        }
+
+        if calendarBreakSettings.isEnabled && snapshot.permissionState == .authorized {
+            if calendarBreakSettings.selectedCalendarID == nil {
+                submenu.addItem(disabledMenuItem(localized("calendarBreaksNoCalendarSelected")))
+            } else if calendarBreakPolicy.isSelectedCalendarMissing(settings: calendarBreakSettings, snapshot: snapshot) {
+                let name = calendarBreakSettings.selectedCalendarTitle
+                    ?? calendarBreakSettings.selectedCalendarID
+                    ?? ""
+                submenu.addItem(disabledMenuItem(String(format: localized("calendarBreaksMissingCalendarFormat"), name)))
+            }
+        }
+
+        submenu.addItem(NSMenuItem.separator())
+
+        let selectCalendarItem = NSMenuItem(title: localized("calendarBreaksSelectCalendar"), action: nil, keyEquivalent: "")
+        let calendarSubmenu = NSMenu()
+        if snapshot.permissionState != .authorized {
+            calendarSubmenu.addItem(disabledMenuItem(localized("smartPauseCalendarAccessRequired")))
+        } else if snapshot.availableCalendars.isEmpty {
+            calendarSubmenu.addItem(disabledMenuItem(localized("smartPauseCalendarNoCalendars")))
+        } else {
+            let noneItem = NSMenuItem(
+                title: localized("calendarBreaksNoneOption"),
+                action: #selector(clearCalendarBreakSelection),
+                keyEquivalent: ""
+            )
+            noneItem.target = self
+            noneItem.state = (calendarBreakSettings.selectedCalendarID == nil) ? .on : .off
+            calendarSubmenu.addItem(noneItem)
+            calendarSubmenu.addItem(NSMenuItem.separator())
+
+            for calendar in snapshot.availableCalendars {
+                let title = calendar.sourceTitle.isEmpty
+                    ? calendar.title
+                    : "\(calendar.title) (\(calendar.sourceTitle))"
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(selectCalendarForBreaks(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = calendar.id
+                item.state = (calendarBreakSettings.selectedCalendarID == calendar.id) ? .on : .off
+                calendarSubmenu.addItem(item)
+            }
+
+            if let selectedID = calendarBreakSettings.selectedCalendarID,
+               !snapshot.availableCalendars.contains(where: { $0.id == selectedID }) {
+                calendarSubmenu.addItem(NSMenuItem.separator())
+                let missingName = calendarBreakSettings.selectedCalendarTitle ?? selectedID
+                let missingItem = NSMenuItem(
+                    title: String(format: localized("calendarBreaksMissingOptionFormat"), missingName),
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                missingItem.isEnabled = false
+                missingItem.state = .on
+                calendarSubmenu.addItem(missingItem)
+            }
+        }
+        selectCalendarItem.submenu = calendarSubmenu
+        submenu.addItem(selectCalendarItem)
+
+        let filterText = calendarBreakSettings.trimmedTitleFilter
+        let filterTitle = filterText.isEmpty
+            ? localized("calendarBreaksTitleFilterAll")
+            : String(format: localized("calendarBreaksTitleFilterFormat"), filterText)
+        let filterItem = NSMenuItem(
+            title: filterTitle,
+            action: #selector(promptCalendarBreakTitleFilter),
+            keyEquivalent: ""
+        )
+        filterItem.target = self
+        submenu.addItem(filterItem)
+
+        if !filterText.isEmpty {
+            let clearFilterItem = NSMenuItem(
+                title: localized("calendarBreaksClearFilter"),
+                action: #selector(clearCalendarBreakTitleFilter),
+                keyEquivalent: ""
+            )
+            clearFilterItem.target = self
+            submenu.addItem(clearFilterItem)
+        }
+
+        return submenu
+    }
+
+    @objc private func toggleCalendarBreaks() {
+        let nextEnabled = !calendarBreakSettings.isEnabled
+        calendarBreakSettings.isEnabled = nextEnabled
+        saveSettings()
+        syncCalendarEventMonitorState()
+
+        if nextEnabled && calendarEventMonitor.currentSnapshot().permissionState == .notDetermined {
+            calendarEventMonitor.requestAccess { [weak self] _ in
+                self?.rebuildCalendarBreaksMenu()
+                self?.evaluateSmartPause(refreshSnapshots: true)
+                self?.rescheduleCountdown()
+            }
+            return
+        }
+
+        rebuildCalendarBreaksMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+        rescheduleCountdown()
+    }
+
+    @objc private func clearCalendarBreakSelection() {
+        calendarBreakSettings.selectedCalendarID = nil
+        calendarBreakSettings.selectedCalendarTitle = nil
+        saveSettings()
+        rebuildCalendarBreaksMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+        rescheduleCountdown()
+    }
+
+    @objc private func selectCalendarForBreaks(_ sender: NSMenuItem) {
+        guard let calendarID = sender.representedObject as? String else { return }
+        let snapshot = calendarEventMonitor.currentSnapshot()
+        calendarBreakSettings.selectedCalendarID = calendarID
+        calendarBreakSettings.selectedCalendarTitle = snapshot.availableCalendars.first(where: { $0.id == calendarID })?.title
+        saveSettings()
+        rebuildCalendarBreaksMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+        rescheduleCountdown()
+    }
+
+    @objc private func promptCalendarBreakTitleFilter() {
+        let alert = NSAlert()
+        alert.messageText = localized("calendarBreaksFilterPromptTitle")
+        alert.informativeText = localized("calendarBreaksFilterPromptMessage")
+        alert.addButton(withTitle: localized("calendarBreaksSave"))
+        alert.addButton(withTitle: localized("calendarBreaksClearFilter"))
+        alert.addButton(withTitle: localized("nightOverrideCancel"))
+
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        inputField.placeholderString = localized("calendarBreaksFilterPlaceholder")
+        inputField.stringValue = calendarBreakSettings.titleFilter
+        alert.accessoryView = inputField
+        alert.window.initialFirstResponder = inputField
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            calendarBreakSettings.titleFilter = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if response == .alertSecondButtonReturn {
+            calendarBreakSettings.titleFilter = ""
+        } else {
+            return
+        }
+
+        saveSettings()
+        rebuildCalendarBreaksMenu()
+        evaluateSmartPause(refreshSnapshots: true)
+        rescheduleCountdown()
+    }
+
+    @objc private func clearCalendarBreakTitleFilter() {
+        calendarBreakSettings.titleFilter = ""
+        saveSettings()
+        rebuildCalendarBreaksMenu()
+        evaluateSmartPause(refreshSnapshots: true)
         rescheduleCountdown()
     }
 }
