@@ -1,10 +1,10 @@
 ---
 id: TASK-8
 title: Pause during Apple Calendar events
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T16:18:00Z'
-updated_date: '2026-11-23T16:31:00Z'
+updated_date: '2026-11-23T19:15:00Z'
 labels:
   - smart-pause
   - calendar
@@ -23,7 +23,7 @@ Integrate with Apple Calendar (EventKit) to automatically pause or skip breaks d
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Users can grant Calendar access and select which calendars/accounts to monitor
-- [ ] #2 Breaks automatically pause during active non-all-day busy events (configurable skip vs postpone)
-- [ ] #3 Unit tests cover overlapping events, all-day filtering, and calendar permission denied states
+- [x] #1 Users can grant Calendar access and select which calendars/accounts to monitor
+- [x] #2 Breaks automatically pause during active non-all-day busy events (configurable skip vs postpone)
+- [x] #3 Unit tests cover overlapping events, all-day filtering, and calendar permission denied states
 <!-- AC:END -->

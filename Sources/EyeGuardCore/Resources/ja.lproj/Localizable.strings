@@ -194,3 +194,17 @@
 "smartPauseScreenCaptureLimitedPermission" = "画面収録の権限がないため検出が制限されています";
 "smartPauseMenuScreenCapture" = "一時停止中: 画面共有・収録中";
 "smartPauseMenuScreenCaptureFormat" = "一時停止中: 画面共有・収録中 (%@)";
+"smartPauseCalendarEvents" = "カレンダー予定";
+"smartPauseCalendarEnabled" = "予定ありのカレンダー予定中は一時停止";
+"smartPauseCalendarGrantAccess" = "カレンダーへのアクセスを許可...";
+"smartPauseCalendarPermissionDenied" = "カレンダーへのアクセスが拒否されています";
+"smartPauseCalendarOpenSettings" = "システム設定を開く...";
+"smartPauseCalendarBreakAction" = "休憩タイミングの動作";
+"smartPauseCalendarActionPostpone" = "予定終了まで休憩を延期";
+"smartPauseCalendarActionSkip" = "予定中の休憩をスキップ";
+"smartPauseCalendarCalendars" = "監視するカレンダー";
+"smartPauseCalendarAccessRequired" = "カレンダーを選択するにはアクセス許可が必要です";
+"smartPauseCalendarNoCalendars" = "カレンダーが見つかりません";
+"smartPauseCalendarAllCalendars" = "すべてのカレンダー";
+"smartPauseMenuCalendar" = "一時停止中: カレンダー予定あり";
+"smartPauseMenuCalendarFormat" = "一時停止中: カレンダー予定 (%@)";

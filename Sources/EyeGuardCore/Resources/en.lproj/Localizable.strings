@@ -194,3 +194,17 @@
 "smartPauseScreenCaptureLimitedPermission" = "Limited without Screen Recording permission";
 "smartPauseMenuScreenCapture" = "Paused: Screen Sharing / Recording";
 "smartPauseMenuScreenCaptureFormat" = "Paused: Screen Sharing / Recording (%@)";
+"smartPauseCalendarEvents" = "Calendar Events";
+"smartPauseCalendarEnabled" = "Pause During Busy Calendar Events";
+"smartPauseCalendarGrantAccess" = "Grant Calendar Access...";
+"smartPauseCalendarPermissionDenied" = "Calendar access denied";
+"smartPauseCalendarOpenSettings" = "Open System Settings...";
+"smartPauseCalendarBreakAction" = "When Break Occurs";
+"smartPauseCalendarActionPostpone" = "Postpone Breaks Until Event Ends";
+"smartPauseCalendarActionSkip" = "Skip Breaks During Events";
+"smartPauseCalendarCalendars" = "Monitored Calendars";
+"smartPauseCalendarAccessRequired" = "Grant Calendar access to select calendars";
+"smartPauseCalendarNoCalendars" = "No calendars found";
+"smartPauseCalendarAllCalendars" = "All Calendars";
+"smartPauseMenuCalendar" = "Paused: Busy Calendar Event";
+"smartPauseMenuCalendarFormat" = "Paused: Calendar Event (%@)";

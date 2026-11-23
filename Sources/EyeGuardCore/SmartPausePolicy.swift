@@ -4,6 +4,7 @@ import Foundation
 public enum SmartPauseReason: Equatable, Sendable {
     case screenRecordingOrSharing(source: String?)
     case meetingOrCall(appName: String?)
+    case calendarEvent(title: String?)
     case fullscreenApp(appName: String?)
     case deepFocusApp(appName: String?)
     case typingOrDragging
@@ -76,11 +77,13 @@ public struct SmartPauseEvaluation: Equatable, Sendable {
 /// Unified Smart Pause policy evaluating all active auto-pause rules in deterministic precedence:
 /// 1. Active screen recording / sharing (if enabled)
 /// 2. Active meeting/call (audio input + meeting app rules)
-/// 3. Fullscreen active app (if enabled)
-/// 4. Deep Focus app (frontmost, then open background `.whenOpen`)
+/// 3. Active busy calendar event (if enabled and authorized)
+/// 4. Fullscreen active app (if enabled)
+/// 5. Deep Focus app (frontmost, then open background `.whenOpen`)
 public struct SmartPausePolicy: Sendable {
     private let screenCapturePolicy = ScreenCapturePausePolicy()
     private let meetingPolicy = MeetingAutoPausePolicy()
+    private let calendarPolicy = CalendarPausePolicy()
     private let focusAppPolicy = FocusAppPausePolicy()
 
     public init() {}
@@ -89,10 +92,13 @@ public struct SmartPausePolicy: Sendable {
         screenCaptureSettings: ScreenCaptureSettings = ScreenCaptureSettings(),
         screenCaptureSnapshot: ScreenCaptureSnapshot = .inactive,
         meetingSettings: MeetingAutoPauseSettings,
+        calendarSettings: CalendarPauseSettings = CalendarPauseSettings(),
+        calendarSnapshot: CalendarSnapshot = .empty,
         focusAppSettings: FocusAppPauseSettings,
         isAudioInputActive: Bool,
         isFrontmostFullscreen: Bool,
-        runningApps: [RunningAppInfo]
+        runningApps: [RunningAppInfo],
+        now: Date = Date()
     ) -> SmartPauseEvaluation {
         let screenCaptureEvaluation = screenCapturePolicy.evaluate(
             settings: screenCaptureSettings,
@@ -109,6 +115,15 @@ public struct SmartPausePolicy: Sendable {
         )
         if meetingEvaluation.isPaused {
             return meetingEvaluation
+        }
+
+        let calendarEvaluation = calendarPolicy.evaluate(
+            settings: calendarSettings,
+            snapshot: calendarSnapshot,
+            now: now
+        )
+        if calendarEvaluation.isPaused {
+            return calendarEvaluation
         }
 
         let focusSnapshot = FocusAppSnapshot(

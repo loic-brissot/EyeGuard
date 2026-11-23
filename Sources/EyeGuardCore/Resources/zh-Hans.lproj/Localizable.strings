@@ -194,3 +194,17 @@
 "smartPauseScreenCaptureLimitedPermission" = "未授予屏幕录制权限，检测能力受限";
 "smartPauseMenuScreenCapture" = "已暂停：正在屏幕共享/录制";
 "smartPauseMenuScreenCaptureFormat" = "已暂停：正在屏幕共享/录制 (%@)";
+"smartPauseCalendarEvents" = "日历日程";
+"smartPauseCalendarEnabled" = "忙碌日历日程期间暂停";
+"smartPauseCalendarGrantAccess" = "授予日历访问权限...";
+"smartPauseCalendarPermissionDenied" = "日历访问权限已拒绝";
+"smartPauseCalendarOpenSettings" = "打开系统设置...";
+"smartPauseCalendarBreakAction" = "触发休息时";
+"smartPauseCalendarActionPostpone" = "推迟休息直到日程结束";
+"smartPauseCalendarActionSkip" = "跳过日程期间的休息";
+"smartPauseCalendarCalendars" = "监控的日历";
+"smartPauseCalendarAccessRequired" = "授予日历权限后可选择具体日历";
+"smartPauseCalendarNoCalendars" = "未找到可用日历";
+"smartPauseCalendarAllCalendars" = "所有日历";
+"smartPauseMenuCalendar" = "已暂停：忙碌日历日程";
+"smartPauseMenuCalendarFormat" = "已暂停：日历日程 (%@)";
